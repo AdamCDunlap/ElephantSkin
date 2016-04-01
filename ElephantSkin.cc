@@ -31,57 +31,61 @@
 #include <sys/xattr.h>
 #endif
 #include <sys/wait.h>
+#include <string>
+#include <string>
+#include <iostream>
 
-const static char* mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
+using std::string;
+using std::cout;
+using std::cerr;
 
-static void copyFile(const char* from, const char* to)
+string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
+
+static void copyFile(const string& from, const string& to)
 {
   pid_t cpID = fork();
   if (cpID == 0) {
     // Child process, do the copy
-    execl( "/bin/cp", "/bin/cp", "-p", from, to, (char*)NULL);
+    execl( "/bin/cp", "/bin/cp", "-p", from.c_str(), to.c_str(), (char*)NULL);
   } else {
     // Parent process, wait for it
     wait(NULL);
   }
 }
 
-static int xmp_getattr(const char *path, struct stat *stbuf)
+static int xmp_getattr(const char *cpath, struct stat *stbuf)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = lstat(appendedPath, stbuf);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = lstat(mirrorpath.c_str(), stbuf);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_access(const char *path, int mask)
+static int xmp_access(const char *cpath, int mask)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = access(appendedPath, mask);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = access(mirrorpath.c_str(), mask);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_readlink(const char *path, char *buf, size_t size)
+static int xmp_readlink(const char *cpath, char *buf, size_t size)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = readlink(appendedPath, buf, size - 1);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = readlink(mirrorpath.c_str(), buf, size - 1);
   if (res == -1)
     return -errno;
 
@@ -90,7 +94,7 @@ static int xmp_readlink(const char *path, char *buf, size_t size)
 }
 
 
-static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+static int xmp_readdir(const char *cpath, void *buf, fuse_fill_dir_t filler,
                        off_t offset, struct fuse_file_info *fi)
 {
   DIR *dp;
@@ -99,10 +103,9 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   (void) offset;
   (void) fi;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  dp = opendir(appendedPath);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  dp = opendir(mirrorpath.c_str());
   if (dp == NULL)
     return -errno;
 
@@ -119,169 +122,154 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   return 0;
 }
 
-static int xmp_mknod(const char *path, mode_t mode, dev_t rdev)
+static int xmp_mknod(const char *cpath, mode_t mode, dev_t rdev)
 {
   int res;
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
 
   /* On Linux this could just be 'mknod(path, mode, rdev)' but this
      is more portable */
   if (S_ISREG(mode)) {
-    res = open(appendedPath, O_CREAT | O_EXCL | O_WRONLY, mode);
+    res = open(mirrorpath.c_str(), O_CREAT | O_EXCL | O_WRONLY, mode);
     if (res >= 0)
       res = close(res);
   } else if (S_ISFIFO(mode))
-    res = mkfifo(appendedPath, mode);
+    res = mkfifo(mirrorpath.c_str(), mode);
   else
-    res = mknod(appendedPath, mode, rdev);
+    res = mknod(mirrorpath.c_str(), mode, rdev);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_mkdir(const char *path, mode_t mode)
+static int xmp_mkdir(const char *cpath, mode_t mode)
 {
   int res;
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
 
-  res = mkdir(appendedPath, mode);
+  res = mkdir(mirrorpath.c_str(), mode);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_unlink(const char *path)
+static int xmp_unlink(const char *cpath)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = unlink(appendedPath);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = unlink(mirrorpath.c_str());
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_rmdir(const char *path)
+static int xmp_rmdir(const char *cpath)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = rmdir(appendedPath);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = rmdir(mirrorpath.c_str());
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_symlink(const char *to, const char *from)
+static int xmp_symlink(const char *cto, const char *cfrom)
 {
   int res;
+  string to(cto), from(cfrom);
+  string mirrorto = mirrordir + to;
+  string mirrorfrom = mirrordir + from;
 
-  char appendedTo[256];
-  strcpy(appendedTo, mirrordir);
-  strcat(appendedTo, to);
-  char appendedFrom[256];
-  strcpy(appendedFrom, mirrordir);
-  strcat(appendedFrom, from);
-  res = symlink(appendedTo, appendedFrom);
+  res = symlink(mirrorto.c_str(), mirrorfrom.c_str());
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_rename(const char *from, const char *to)
+static int xmp_rename(const char *cfrom, const char *cto)
 {
   int res;
+  string to(cto), from(cfrom);
+  string mirrorto = mirrordir + to;
+  string mirrorfrom = mirrordir + from;
 
-  char appendedTo[256];
-  strcpy(appendedTo, mirrordir);
-  strcat(appendedTo, to);
-  char appendedFrom[256];
-  strcpy(appendedFrom, mirrordir);
-  strcat(appendedFrom, from);
-  res = rename(appendedFrom, appendedTo);
+  res = rename(mirrorfrom.c_str(), mirrorto.c_str());
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_link(const char *from, const char *to)
+static int xmp_link(const char *cfrom, const char *cto)
 {
   int res;
 
-  char appendedTo[256];
-  strcpy(appendedTo, mirrordir);
-  strcat(appendedTo, to);
-  char appendedFrom[256];
-  strcpy(appendedFrom, mirrordir);
-  strcat(appendedFrom, from);
-  res = link(appendedFrom, appendedTo);
+  string to(cto), from(cfrom);
+  string mirrorto = mirrordir + to;
+  string mirrorfrom = mirrordir + from;
+
+  res = link(mirrorfrom.c_str(), mirrorto.c_str());
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_chmod(const char *path, mode_t mode)
+static int xmp_chmod(const char *cpath, mode_t mode)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = chmod(appendedPath, mode);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = chmod(mirrorpath.c_str(), mode);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_chown(const char *path, uid_t uid, gid_t gid)
+static int xmp_chown(const char *cpath, uid_t uid, gid_t gid)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = lchown(appendedPath, uid, gid);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = lchown(mirrorpath.c_str(), uid, gid);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_truncate(const char *path, off_t size)
+static int xmp_truncate(const char *cpath, off_t size)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
 
   // Make a copy of the file first!
-  copyFile(appendedPath, "/home/adam/lastTruncatedFile");
+  copyFile(mirrorpath, "/home/adam/lastTruncatedFile");
 
-  res = truncate(appendedPath, size);
+  res = truncate(mirrorpath.c_str(), size);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_utimens(const char *path, const struct timespec ts[2])
+static int xmp_utimens(const char *cpath, const struct timespec ts[2])
 {
   int res;
   struct timeval tv[2];
@@ -291,24 +279,22 @@ static int xmp_utimens(const char *path, const struct timespec ts[2])
   tv[1].tv_sec = ts[1].tv_sec;
   tv[1].tv_usec = ts[1].tv_nsec / 1000;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = utimes(appendedPath, tv);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = utimes(mirrorpath.c_str(), tv);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_open(const char *path, struct fuse_file_info *fi)
+static int xmp_open(const char *cpath, struct fuse_file_info *fi)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = open(appendedPath, fi->flags);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = open(mirrorpath.c_str(), fi->flags);
   if (res == -1)
     return -errno;
 
@@ -316,17 +302,16 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
   return 0;
 }
 
-static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
+static int xmp_read(const char *cpath, char *buf, size_t size, off_t offset,
                     struct fuse_file_info *fi)
 {
   int fd;
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
   (void) fi;
-  fd = open(appendedPath, O_RDONLY);
+  fd = open(mirrorpath.c_str(), O_RDONLY);
   if (fd == -1)
     return -errno;
 
@@ -338,17 +323,16 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
   return res;
 }
 
-static int xmp_write(const char *path, const char *buf, size_t size,
+static int xmp_write(const char *cpath, const char *buf, size_t size,
                      off_t offset, struct fuse_file_info *fi)
 {
   int fd;
   int res;
 
   (void) fi;
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  fd = open(appendedPath, O_WRONLY);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  fd = open(mirrorpath.c_str(), O_WRONLY);
   if (fd == -1)
     return -errno;
 
@@ -360,78 +344,40 @@ static int xmp_write(const char *path, const char *buf, size_t size,
   return res;
 }
 
-static int xmp_statfs(const char *path, struct statvfs *stbuf)
+static int xmp_statfs(const char *cpath, struct statvfs *stbuf)
 {
   int res;
 
-  char appendedPath[256];
-  strcpy(appendedPath, mirrordir);
-  strcat(appendedPath, path);
-  res = statvfs(appendedPath, stbuf);
+  string path(cpath);
+  string mirrorpath = mirrordir + path;
+  res = statvfs(mirrorpath.c_str(), stbuf);
   if (res == -1)
     return -errno;
 
   return 0;
 }
 
-static int xmp_release(const char *path, struct fuse_file_info *fi)
+static int xmp_release(const char *cpath, struct fuse_file_info *fi)
 {
   /* Just a stub.   This method is optional and can safely be left
      unimplemented */
 
-  (void) path;
+  (void) cpath;
   (void) fi;
   return 0;
 }
 
-static int xmp_fsync(const char *path, int isdatasync,
+static int xmp_fsync(const char *cpath, int isdatasync,
                      struct fuse_file_info *fi)
 {
   /* Just a stub.   This method is optional and can safely be left
      unimplemented */
 
-  (void) path;
+  (void) cpath;
   (void) isdatasync;
   (void) fi;
   return 0;
 }
-
-#ifdef HAVE_SETXATTR
-/* xattr operations are optional and can safely be left unimplemented */
-static int xmp_setxattr(const char *path, const char *name, const char *value,
-      size_t size, int flags)
-{
-  int res = lsetxattr(path, name, value, size, flags);
-  if (res == -1)
-    return -errno;
-  return 0;
-}
-
-static int xmp_getxattr(const char *path, const char *name, char *value,
-      size_t size)
-{
-  int res = lgetxattr(path, name, value, size);
-  if (res == -1)
-    return -errno;
-  return res;
-}
-
-static int xmp_listxattr(const char *path, char *list, size_t size)
-{
-  int res = llistxattr(path, list, size);
-  if (res == -1)
-    return -errno;
-  return res;
-}
-
-static int xmp_removexattr(const char *path, const char *name)
-{
-  int res = lremovexattr(path, name);
-  if (res == -1)
-    return -errno;
-  return 0;
-}
-#endif /* HAVE_SETXATTR */
 
 static struct fuse_operations xmp_oper = {
   .getattr  = xmp_getattr,
@@ -455,12 +401,6 @@ static struct fuse_operations xmp_oper = {
   .statfs    = xmp_statfs,
   .release  = xmp_release,
   .fsync    = xmp_fsync,
-#ifdef HAVE_SETXATTR
-  .setxattr  = xmp_setxattr,
-  .getxattr  = xmp_getxattr,
-  .listxattr  = xmp_listxattr,
-  .removexattr  = xmp_removexattr,
-#endif
 };
 
 int main(int argc, char *argv[])
