@@ -34,6 +34,7 @@
 #include <string>
 #include <string>
 #include <iostream>
+#include <array>
 
 using std::string;
 using std::cout;
@@ -43,13 +44,27 @@ string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
 
 static void copyFile(const string& from, const string& to)
 {
-  pid_t cpID = fork();
+  // fork splits this process into two exact copies. vfork doesn't make a fully
+  // copy, but we don't care because the child process isn't going to modify
+  // anything, it's just going to build arguments and exec cp
+  const pid_t cpID = vfork();
   if (cpID == 0) {
-    // Child process, do the copy
-    execl( "/bin/cp", "/bin/cp", "-p", from.c_str(), to.c_str(), (char*)NULL);
+    // This is the child process, exec cp to do the copy
+
+    // -p means to preserve the mode, ownership, and timestamps
+    // This array must end with nullptr because that's what execv wants
+    const std::array<const char*, 5> execvargs{{
+      "/bin/cp", "-a", from.c_str(), to.c_str(), nullptr
+    }};
+
+    // const_cast is scary but we're assured that execv won't actually modify
+    // the array http://stackoverflow.com/a/190208
+    // http://pubs.opengroup.org/onlinepubs/9699919799/functions/exec.html
+    execv("/bin/cp", const_cast<char**>(execvargs.data()));
   } else {
-    // Parent process, wait for it
-    wait(NULL);
+    // This is the parent process, so wait for the copy to finish and then reap
+    // it.
+    wait(nullptr);
   }
 }
 
