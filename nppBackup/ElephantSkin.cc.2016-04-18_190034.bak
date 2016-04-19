@@ -41,12 +41,8 @@ using std::cout;
 using std::cerr;
 
 string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
-int GARBAGE_INTERVAL = 300; //how often to garbage collect in seconds
-string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
-int LANDMARK_AGE = 604800; 	//the amount of time (in seconds) to keep all
-														//backups, default to 7 days
-int LANDMARK_AMOUNT = 50;		//how many version of a file to keep before
-														//cleaning some up 	
+int GARBAGE_INTERVAL = 5; //how often to garbage collect in seconds
+string SNAPSHOT_DIRECTORY = ".elephant_snapshot";
 
 static void copyFile(const string& from, const string& to)
 {
@@ -74,94 +70,27 @@ static void copyFile(const string& from, const string& to)
   }
 }
 
-//the function to determine whether to keep a file past its landmark
-static bool keepFileEvalutaion(	const int time_newest,
-																const int time_curr,
-																const int iteration_newest, 
-																const int iteration_curr, 
-																const int iterations_since_last_keep){
-	//some smart function to see how often to keep
-	int keep_threshold = 3; //temporary value
-	
-	//first check if the backup is new enough and not too many have been stored
-	//if so, automatically keep it, otherwise compare against function
-	if((iteration_newest - iteration_curr) > LANDMARK_AMOUNT or (time_curr - time_newest) > LANDMARK_AGE){
-		if(iterations_since_last_keep >= keep_threshold){
-			return true;
-		} else {
-			return false;
-		}
-	} else {
-		return true;
-	}
-}
-
 static void cleanup_backups(const string current_directory){
-	//clean one file at a time by drilling into its directory
-	DIR *dir = opendir(current_directory);
-	struct dirent *entry = readdir(dir);
-	while (entry != NULL)
-  {
-		std::vector<string> backups;
-		DIR *dir_backups = opendir(entry->d_name);
-		struct dirent *backup = readdir(dir_backups);
-		while(backup != NULL){
-			backups.push_back(backup->d_name[]);
-			backup = readdir(dir_backups);
-		}
-		//alphabetical should make it oldest->newest
-		std::sort(backups.begin(), backups.end());
-		//get most recent value against which to compare rest
-		if(!backups.empty()){
-			string mostRecentName = backups.back();
-			backups.pop_back();
-			std::string::size_type n = mostRecentName.find( '_' );
-			int mostRecentDate = stoi(mostRecentName.substr(0, n-1));
-			int mostRecentIteration = stoi(mostRecentName.substr(n+1));
-		}
-		int iterationsSinceKept = 0;
-		while(!backups.empty()){
-			string currName = backups.back();
-			backups.pop_back();
-			std::string::size_type n = mostRecentName.find( '_' );
-			int currDate = stoi(mostRecentName.substr(0, n-1));
-			int currIteration = stoi(mostRecentName.substr(n+1));
-			if(keepFileEvalution(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
-				iterationSinceKept = 0;
-			} else {
-				++iterationsSinceKept;
-				unlink(currName);
-			}
-		}
-		entry = readdir(dir);
-	}
-	closedir(dir);
-	return;
+	
 }
 
 //work way down the directory tree
 //everytime it sees a .elephant_snapshot folder, call cleanup
-static void traverse_directory_tree(const string current_directory){
+static voide traverse_directory_tree(const string current_directory){
 	DIR *dir = opendir(current_directory);
 	struct dirent *entry = readdir(dir);
-	//read out files one at a time
-	while (entry != NULL)
-  {
-		//stat to check if its a directory
-		struct stat st;
-		lstat(dent->d_name, &st);
-		if(S_ISDIR(st.st_mode)){
-			//clean in the snapshot_directory, keep traversing otherwise
-			if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
-				cleanup_backups(current_directory+"/"+entry->d_name);
+	 while (entry != NULL)
+    {
+      //clean in the snapshot_directory, keep travering otherwise
+			if(SNAPSHOT_DIRECTORY.compare(entry->d_name) == 0){
+				cleanup_backups(current_directory + entry);
 			} else {
-				traverse_directory_tree(current_directory+"/"+entry->d_name);
+				traverse_directory_tree(current_directory + entry);
 			}
-		}
-		entry = readdir(dir);
-  }
-  closedir(dir);
-	return;
+			entry = readdir(dir);
+    }
+
+    closedir(dir);
 }
 
 static void collectGarbage(const string mountDir){

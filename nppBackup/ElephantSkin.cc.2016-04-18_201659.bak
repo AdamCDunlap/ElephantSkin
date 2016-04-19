@@ -82,17 +82,10 @@ static bool keepFileEvalutaion(	const int time_newest,
 																const int iterations_since_last_keep){
 	//some smart function to see how often to keep
 	int keep_threshold = 3; //temporary value
-	
-	//first check if the backup is new enough and not too many have been stored
-	//if so, automatically keep it, otherwise compare against function
-	if((iteration_newest - iteration_curr) > LANDMARK_AMOUNT or (time_curr - time_newest) > LANDMARK_AGE){
-		if(iterations_since_last_keep >= keep_threshold){
-			return true;
-		} else {
-			return false;
-		}
-	} else {
+	if(iterations_since_last_keep >= keep_threshold){
 		return true;
+	} else {
+		return false;
 	}
 }
 
@@ -153,9 +146,9 @@ static void traverse_directory_tree(const string current_directory){
 		if(S_ISDIR(st.st_mode)){
 			//clean in the snapshot_directory, keep traversing otherwise
 			if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
-				cleanup_backups(current_directory+"/"+entry->d_name);
+				cleanup_backups(current_directory+"/"entry->d_name);
 			} else {
-				traverse_directory_tree(current_directory+"/"+entry->d_name);
+				traverse_directory_tree(current_directory+"/"entry->d_name);
 			}
 		}
 		entry = readdir(dir);
