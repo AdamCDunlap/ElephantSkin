@@ -75,7 +75,7 @@ static void copyFile(const string& from, const string& to)
 }
 
 //the function to determine whether to keep a file past its landmark
-static bool keepFileEvaluation(	const int time_newest,
+static bool keepFileEvalutaion(	const int time_newest,
 																const int time_curr,
 																const int iteration_newest, 
 																const int iteration_curr, 
@@ -126,7 +126,7 @@ static void cleanup_backups(const string current_directory){
 			std::string::size_type n = mostRecentName.find( '_' );
 			int currDate = stoi(mostRecentName.substr(0, n-1));
 			int currIteration = stoi(mostRecentName.substr(n+1));
-			if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
+			if(keepFileEvalution(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
 				iterationSinceKept = 0;
 			} else {
 				++iterationsSinceKept;
