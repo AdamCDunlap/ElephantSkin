@@ -43,8 +43,9 @@ using std::string;
 using std::cout;
 using std::cerr;
 
-string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
-string mountDir;
+//string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
+string mirrordir;
+string mountdir;
 int GARBAGE_INTERVAL = 300; //how often to garbage collect in seconds
 string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
 int LANDMARK_AGE = 604800; 	//the amount of time (in seconds) to keep all
@@ -174,7 +175,7 @@ static void traverse_directory_tree(const string current_directory){
 static void collectGarbage(){
 	while(true){
 		sleep(GARBAGE_INTERVAL);
-		traverse_directory_tree(mountDir);
+		traverse_directory_tree(mirrordir);
 	}
 }
 
@@ -183,7 +184,9 @@ static int xmp_getattr(const char *cpath, struct stat *stbuf)
   int res;
 
   string path(cpath);
+	cerr << path << std::endl;
   string mirrorpath = mirrordir + path;
+	cerr << mirrorpath << std::endl;
   res = lstat(mirrorpath.c_str(), stbuf);
   if (res == -1)
     return -errno;
@@ -534,8 +537,17 @@ int main(int argc, char *argv[])
 	
 	char path[PATH_MAX];
 	getcwd(path, PATH_MAX);
-	strcat(path, argv[argc-1]); //last argument is the mount folder
-	mountDir 	= path;
+	string mount_folder = argv[argc-1]; //last argument is the mount folder
+	mirrordir = path;
+	mountdir = path;
+	mirrordir += "/." + mount_folder;
+	mountdir += "/" + mount_folder;
+	
+	//sketchy permissions for now, need to fix this
+	mkdir(mirrordir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ); 
+	cerr << "test" << std::endl;
+	cout << "test2" << std::endl;
+	cerr << mirrordir << std::endl;
 	std::thread garbage_collection(collectGarbage);
 	
   return fuse_main(argc, argv, &xmp_oper, NULL);
