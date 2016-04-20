@@ -114,19 +114,16 @@ static void cleanup_backups(const string current_directory){
 			backup = readdir(dir_backups);
 		}
 		//alphabetical should make it oldest->newest
-		std::sort(backups.begin(), backups.end());
+		std::qsort(backups.begin(), backups.end());
 		//get most recent value against which to compare rest
-		string mostRecentName;
-		int mostRecentDate;
-		int mostRecentIteration;
-		int iterationsSinceKept = 0;
 		if(!backups.empty()){
-			mostRecentName = backups.back();
+			string mostRecentName = backups.back();
 			backups.pop_back();
 			std::string::size_type n = mostRecentName.find( '_' );
-			mostRecentDate = stoi(mostRecentName.substr(0, n-1));
-			mostRecentIteration = stoi(mostRecentName.substr(n+1));
+			int mostRecentDate = stoi(mostRecentName.substr(0, n-1));
+			int mostRecentIteration = stoi(mostRecentName.substr(n+1));
 		}
+		int iterationsSinceKept = 0;
 		while(!backups.empty()){
 			string currName = backups.back();
 			backups.pop_back();
@@ -134,10 +131,10 @@ static void cleanup_backups(const string current_directory){
 			int currDate = stoi(mostRecentName.substr(0, n-1));
 			int currIteration = stoi(mostRecentName.substr(n+1));
 			if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
-				iterationsSinceKept = 0;
+				iterationSinceKept = 0;
 			} else {
 				++iterationsSinceKept;
-				unlink(currName.c_str());
+				unlink(currName);
 			}
 		}
 		entry = readdir(dir);
@@ -156,7 +153,7 @@ static void traverse_directory_tree(const string current_directory){
   {
 		//stat to check if its a directory
 		struct stat st;
-		lstat(entry->d_name, &st);
+		lstat(dent->d_name, &st);
 		if(S_ISDIR(st.st_mode)){
 			//clean in the snapshot_directory, keep traversing otherwise
 			if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
@@ -533,7 +530,7 @@ int main(int argc, char *argv[])
   umask(0);
 	
 	char path[PATH_MAX];
-	getcwd(path, PATH_MAX);
+	getwd(path);
 	strcat(path, argv[argc-1]); //last argument is the mount folder
 	mountDir 	= path;
 	std::thread garbage_collection(collectGarbage);

@@ -36,15 +36,12 @@
 #include <iostream>
 #include <array>
 #include <thread>
-#include <vector>
-#include <algorithm>
 
 using std::string;
 using std::cout;
 using std::cerr;
 
 string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
-string mountDir;
 int GARBAGE_INTERVAL = 300; //how often to garbage collect in seconds
 string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
 int LANDMARK_AGE = 604800; 	//the amount of time (in seconds) to keep all
@@ -102,7 +99,7 @@ static bool keepFileEvaluation(	const int time_newest,
 
 static void cleanup_backups(const string current_directory){
 	//clean one file at a time by drilling into its directory
-	DIR *dir = opendir(current_directory.c_str());
+	DIR *dir = opendir(current_directory);
 	struct dirent *entry = readdir(dir);
 	while (entry != NULL)
   {
@@ -110,23 +107,20 @@ static void cleanup_backups(const string current_directory){
 		DIR *dir_backups = opendir(entry->d_name);
 		struct dirent *backup = readdir(dir_backups);
 		while(backup != NULL){
-			backups.push_back(backup->d_name);
+			backups.push_back(backup->d_name[]);
 			backup = readdir(dir_backups);
 		}
 		//alphabetical should make it oldest->newest
 		std::sort(backups.begin(), backups.end());
 		//get most recent value against which to compare rest
-		string mostRecentName;
-		int mostRecentDate;
-		int mostRecentIteration;
-		int iterationsSinceKept = 0;
 		if(!backups.empty()){
-			mostRecentName = backups.back();
+			string mostRecentName = backups.back();
 			backups.pop_back();
 			std::string::size_type n = mostRecentName.find( '_' );
-			mostRecentDate = stoi(mostRecentName.substr(0, n-1));
-			mostRecentIteration = stoi(mostRecentName.substr(n+1));
+			int mostRecentDate = stoi(mostRecentName.substr(0, n-1));
+			int mostRecentIteration = stoi(mostRecentName.substr(n+1));
 		}
+		int iterationsSinceKept = 0;
 		while(!backups.empty()){
 			string currName = backups.back();
 			backups.pop_back();
@@ -134,10 +128,10 @@ static void cleanup_backups(const string current_directory){
 			int currDate = stoi(mostRecentName.substr(0, n-1));
 			int currIteration = stoi(mostRecentName.substr(n+1));
 			if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
-				iterationsSinceKept = 0;
+				iterationSinceKept = 0;
 			} else {
 				++iterationsSinceKept;
-				unlink(currName.c_str());
+				unlink(currName);
 			}
 		}
 		entry = readdir(dir);
@@ -149,14 +143,14 @@ static void cleanup_backups(const string current_directory){
 //work way down the directory tree
 //everytime it sees a .elephant_snapshot folder, call cleanup
 static void traverse_directory_tree(const string current_directory){
-	DIR *dir = opendir(current_directory.c_str());
+	DIR *dir = opendir(current_directory);
 	struct dirent *entry = readdir(dir);
 	//read out files one at a time
 	while (entry != NULL)
   {
 		//stat to check if its a directory
 		struct stat st;
-		lstat(entry->d_name, &st);
+		lstat(dent->d_name, &st);
 		if(S_ISDIR(st.st_mode)){
 			//clean in the snapshot_directory, keep traversing otherwise
 			if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
@@ -531,12 +525,7 @@ static struct fuse_operations xmp_oper = {
 int main(int argc, char *argv[])
 {
   umask(0);
-	
-	char path[PATH_MAX];
-	getcwd(path, PATH_MAX);
-	strcat(path, argv[argc-1]); //last argument is the mount folder
-	mountDir 	= path;
-	std::thread garbage_collection(collectGarbage);
-	
+	char * path = get_current_dir_name;
+	std::thread garbage_collection(collectGarbage, path);
   return fuse_main(argc, argv, &xmp_oper, NULL);
 }

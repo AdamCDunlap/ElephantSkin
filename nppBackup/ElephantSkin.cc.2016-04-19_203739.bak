@@ -533,7 +533,7 @@ int main(int argc, char *argv[])
   umask(0);
 	
 	char path[PATH_MAX];
-	getcwd(path, PATH_MAX);
+	getwd(path);
 	strcat(path, argv[argc-1]); //last argument is the mount folder
 	mountDir 	= path;
 	std::thread garbage_collection(collectGarbage);
