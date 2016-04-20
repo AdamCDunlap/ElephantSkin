@@ -46,12 +46,14 @@ using std::cerr;
 //string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
 string mirrordir;
 string mountdir;
-int GARBAGE_INTERVAL = 300; //how often to garbage collect in seconds
+int GARBAGE_INTERVAL = 2; //how often to garbage collect in seconds
 string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
 int LANDMARK_AGE = 604800; 	//the amount of time (in seconds) to keep all
 														//backups, default to 7 days
 int LANDMARK_AMOUNT = 50;		//how many version of a file to keep before
-														//cleaning some up 	
+														//cleaning some up 
+string parentDir = "..";
+string selfDir = ".";														
 
 static void copyFile(const string& from, const string& to)
 {
@@ -103,6 +105,7 @@ static bool keepFileEvaluation(	const int time_newest,
 
 static void cleanup_backups(const string current_directory){
 	//clean one file at a time by drilling into its directory
+	cerr<< "entering backups folder " << current_directory<< std::endl;
 	DIR *dir = opendir(current_directory.c_str());
 	struct dirent *entry = readdir(dir);
 	while (entry != NULL)
@@ -111,8 +114,11 @@ static void cleanup_backups(const string current_directory){
 		DIR *dir_backups = opendir(entry->d_name);
 		struct dirent *backup = readdir(dir_backups);
 		while(backup != NULL){
-			backups.push_back(backup->d_name);
-			backup = readdir(dir_backups);
+			if(	parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
+					selfDir.compare(backup->d_name) != 0){
+				backups.push_back(backup->d_name);
+				backup = readdir(dir_backups);
+			}
 		}
 		//alphabetical should make it oldest->newest
 		std::sort(backups.begin(), backups.end());
@@ -150,20 +156,26 @@ static void cleanup_backups(const string current_directory){
 //work way down the directory tree
 //everytime it sees a .elephant_snapshot folder, call cleanup
 static void traverse_directory_tree(const string current_directory){
+	cerr << "traversting to this dir " << current_directory << std::endl;
 	DIR *dir = opendir(current_directory.c_str());
 	struct dirent *entry = readdir(dir);
 	//read out files one at a time
 	while (entry != NULL)
   {
-		//stat to check if its a directory
-		struct stat st;
-		lstat(entry->d_name, &st);
-		if(S_ISDIR(st.st_mode)){
-			//clean in the snapshot_directory, keep traversing otherwise
-			if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
-				cleanup_backups(current_directory+"/"+entry->d_name);
-			} else {
-				traverse_directory_tree(current_directory+"/"+entry->d_name);
+		//cerr << "before if: " << current_directory+"/"+entry->d_name << std::endl;
+		if(parentDir.compare(entry->d_name) != 0 && 
+			selfDir.compare(entry->d_name) != 0){ //dont want to check .. and .
+			//stat to check if its a directory
+			struct stat st;
+			lstat((current_directory+"/"+entry->d_name).c_str(), &st);
+			cerr << "just stated: " << current_directory+"/"+entry->d_name << std::endl;
+			if(S_ISDIR(st.st_mode)){
+				//clean in the snapshot_directory, keep traversing otherwise
+				if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
+					cleanup_backups(current_directory+"/"+entry->d_name);
+				} else {
+					traverse_directory_tree(current_directory+"/"+entry->d_name);
+				}
 			}
 		}
 		entry = readdir(dir);
@@ -545,8 +557,6 @@ int main(int argc, char *argv[])
 	
 	//sketchy permissions for now, need to fix this
 	mkdir(mirrordir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ); 
-	cerr << "test" << std::endl;
-	cout << "test2" << std::endl;
 	cerr << mirrordir << std::endl;
 	std::thread garbage_collection(collectGarbage);
 	
