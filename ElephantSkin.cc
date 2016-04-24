@@ -35,12 +35,19 @@
 #include <string>
 #include <iostream>
 #include <array>
+#include <tuple>
 
 using std::string;
 using std::cout;
 using std::cerr;
+using std::endl;
 
-string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
+static string mirrordir;
+
+static const string term_red = "[0;31m";
+static const string term_yellow = "[0;33m";
+static const string term_reset = "[0;0m";
+
 
 static void copyFile(const string& from, const string& to)
 {
@@ -66,6 +73,51 @@ static void copyFile(const string& from, const string& to)
     // it.
     wait(nullptr);
   }
+}
+
+// Given path, return the child name (part after last /) and parent name (the
+// rest of it, not including the /. Return / for root directory.
+std::tuple<string, string> break_off_last_path_entry(const string& path) {
+
+  size_t last_delim_pos = path.find_last_of('/');
+  if (last_delim_pos == string::npos) {
+    cerr << "Was given a string without a slash..." << endl;
+    exit(2);
+  }
+
+  string parent_path = path.substr(0, last_delim_pos);
+  
+  if (parent_path.empty()) {
+    parent_path.push_back('/');
+  }
+  // Return (parent, child)
+  return std::make_tuple(parent_path, path.substr(last_delim_pos+1));
+}
+
+
+static void backupFile(const string& path) {
+  // Get filename, which is the current time in ISO8601 format
+  time_t now;
+  time(&now);
+  std::array<char, sizeof "2016-04-24T18:21:45Z"> timebuf;
+  strftime(timebuf.data(), timebuf.size(), "%FT%TZ", gmtime(&now));
+  string timestring(timebuf.begin(), timebuf.end());
+
+  string containing_dir, filename;
+  std::tie(containing_dir, filename) = break_off_last_path_entry(path);
+
+  string newLocationBuilder = containing_dir + "/.snapshots";
+  int err = mkdir( newLocationBuilder.c_str(), 0500);
+  if (err == -1) {
+    cerr << "Couldn't make " << newLocationBuilder << endl;
+  }
+  newLocationBuilder += "/" + filename;
+  err = mkdir( newLocationBuilder.c_str(), 0500);
+  if (err == -1) {
+    cerr << "Couldn't make " << newLocationBuilder << endl;
+  }
+  newLocationBuilder += "/" + timestring;
+  copyFile(path, newLocationBuilder);
 }
 
 static int xmp_getattr(const char *cpath, struct stat *stbuf)
@@ -176,8 +228,12 @@ static int xmp_unlink(const char *cpath)
 {
   int res;
 
+
   string path(cpath);
   string mirrorpath = mirrordir + path;
+
+  backupFile(path);
+
   res = unlink(mirrorpath.c_str());
   if (res == -1)
     return -errno;
@@ -274,8 +330,7 @@ static int xmp_truncate(const char *cpath, off_t size)
   string path(cpath);
   string mirrorpath = mirrordir + path;
 
-  // Make a copy of the file first!
-  copyFile(mirrorpath, "/home/adam/lastTruncatedFile");
+  backupFile(mirrorpath);
 
   res = truncate(mirrorpath.c_str(), size);
   if (res == -1)
@@ -343,6 +398,8 @@ static int xmp_write(const char *cpath, const char *buf, size_t size,
 {
   int fd;
   int res;
+
+  backupFile(cpath);
 
   (void) fi;
   string path(cpath);
@@ -421,5 +478,19 @@ static struct fuse_operations xmp_oper = {
 int main(int argc, char *argv[])
 {
   umask(0);
+
+  if (argc < 2) {
+    cerr << "First argument should be the backend directory" << endl;
+    return 2;
+  }
+
+  char* c_cwd = get_current_dir_name();
+  mirrordir = string(c_cwd) + "/" + argv[1];
+  free(c_cwd);
+  ++argv;
+  --argc;
+
+  cout << "Opening " << mirrordir << " as backend directory" << endl;
+
   return fuse_main(argc, argv, &xmp_oper, NULL);
 }
