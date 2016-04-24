@@ -76,7 +76,7 @@ static void copyFile(const string& from, const string& to)
 }
 
 // Given path, return the child name (part after last /) and parent name (the
-// rest of it, not including the /. Return / for root directory.
+// rest of it, not including the /. Return empty string for root directory.
 std::tuple<string, string> break_off_last_path_entry(const string& path) {
 
   size_t last_delim_pos = path.find_last_of('/');
@@ -87,9 +87,6 @@ std::tuple<string, string> break_off_last_path_entry(const string& path) {
 
   string parent_path = path.substr(0, last_delim_pos);
   
-  if (parent_path.empty()) {
-    parent_path.push_back('/');
-  }
   // Return (parent, child)
   return std::make_tuple(parent_path, path.substr(last_delim_pos+1));
 }
@@ -106,17 +103,27 @@ static void backupFile(const string& path) {
   string containing_dir, filename;
   std::tie(containing_dir, filename) = break_off_last_path_entry(path);
 
+  // Make .snapshots directory
   string newLocationBuilder = containing_dir + "/.snapshots";
-  int err = mkdir( newLocationBuilder.c_str(), 0500);
-  if (err == -1) {
-    cerr << "Couldn't make " << newLocationBuilder << endl;
+  cerr << "Making" << newLocationBuilder << endl;
+  int err = mkdir( newLocationBuilder.c_str(), 0700);
+  // If we got an error that's not a "file already exists" error
+  if (err == -1 && errno != EEXIST) {
+    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
   }
+
+  // Make .snapshots/thefile directory
   newLocationBuilder += "/" + filename;
-  err = mkdir( newLocationBuilder.c_str(), 0500);
-  if (err == -1) {
-    cerr << "Couldn't make " << newLocationBuilder << endl;
+  cerr << "Making" << newLocationBuilder << endl;
+  err = mkdir( newLocationBuilder.c_str(), 0700);
+  // If we got an error that's not a "file already exists" error
+  if (err == -1 && errno != EEXIST) {
+    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
   }
+
+  // Copy the file to .snapsots/thefile/thetime
   newLocationBuilder += "/" + timestring;
+  cerr << "Copying to " << newLocationBuilder << endl;
   copyFile(path, newLocationBuilder);
 }
 
@@ -232,7 +239,7 @@ static int xmp_unlink(const char *cpath)
   string path(cpath);
   string mirrorpath = mirrordir + path;
 
-  backupFile(path);
+  backupFile(mirrorpath);
 
   res = unlink(mirrorpath.c_str());
   if (res == -1)
@@ -399,11 +406,12 @@ static int xmp_write(const char *cpath, const char *buf, size_t size,
   int fd;
   int res;
 
-  backupFile(cpath);
-
   (void) fi;
   string path(cpath);
   string mirrorpath = mirrordir + path;
+
+  backupFile(mirrorpath);
+
   fd = open(mirrorpath.c_str(), O_WRONLY);
   if (fd == -1)
     return -errno;
