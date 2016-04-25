@@ -48,12 +48,12 @@ string mirrordir;
 string mountdir;
 int GARBAGE_INTERVAL = 2; //how often to garbage collect in seconds
 string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
-int LANDMARK_AGE = 604800; 	//the amount of time (in seconds) to keep all
-														//backups, default to 7 days
-int LANDMARK_AMOUNT = 50;		//how many version of a file to keep before
-														//cleaning some up 
+int LANDMARK_AGE = 604800;  //the amount of time (in seconds) to keep all
+                            //backups, default to 7 days
+int LANDMARK_AMOUNT = 50;   //how many version of a file to keep before
+                            //cleaning some up 
 string parentDir = "..";
-string selfDir = ".";														
+string selfDir = ".";                           
 
 static void copyFile(const string& from, const string& to)
 {
@@ -82,113 +82,113 @@ static void copyFile(const string& from, const string& to)
 }
 
 //the function to determine whether to keep a file past its landmark
-static bool keepFileEvaluation(	const int time_newest,
-																const int time_curr,
-																const int iteration_newest, 
-																const int iteration_curr, 
-																const int iterations_since_last_keep){
-	//some smart function to see how often to keep
-	int keep_threshold = 3; //temporary value
-	
-	//first check if the backup is new enough and not too many have been stored
-	//if so, automatically keep it, otherwise compare against function
-	if((iteration_newest - iteration_curr) > LANDMARK_AMOUNT or (time_curr - time_newest) > LANDMARK_AGE){
-		if(iterations_since_last_keep >= keep_threshold){
-			return true;
-		} else {
-			return false;
-		}
-	} else {
-		return true;
-	}
+static bool keepFileEvaluation( const int time_newest,
+                                const int time_curr,
+                                const int iteration_newest, 
+                                const int iteration_curr, 
+                                const int iterations_since_last_keep){
+  //some smart function to see how often to keep
+  int keep_threshold = 3; //temporary value
+  
+  //first check if the backup is new enough and not too many have been stored
+  //if so, automatically keep it, otherwise compare against function
+  if((iteration_newest - iteration_curr) > LANDMARK_AMOUNT or (time_curr - time_newest) > LANDMARK_AGE){
+    if(iterations_since_last_keep >= keep_threshold){
+      return true;
+    } else {
+      return false;
+    }
+  } else {
+    return true;
+  }
 }
 
 static void cleanup_backups(const string current_directory){
-	//clean one file at a time by drilling into its directory
-	cerr<< "entering backups folder " << current_directory<< std::endl;
-	DIR *dir = opendir(current_directory.c_str());
-	struct dirent *entry = readdir(dir);
-	while (entry != NULL)
+  //clean one file at a time by drilling into its directory
+  cerr<< "entering backups folder " << current_directory<< std::endl;
+  DIR *dir = opendir(current_directory.c_str());
+  struct dirent *entry = readdir(dir);
+  while (entry != nullptr)
   {
-		std::vector<string> backups;
-		DIR *dir_backups = opendir(entry->d_name);
-		struct dirent *backup = readdir(dir_backups);
-		while(backup != NULL){
-			if(	parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
-					selfDir.compare(backup->d_name) != 0){
-				backups.push_back(backup->d_name);
-				backup = readdir(dir_backups);
-			}
-		}
-		//alphabetical should make it oldest->newest
-		std::sort(backups.begin(), backups.end());
-		//get most recent value against which to compare rest
-		string mostRecentName;
-		int mostRecentDate;
-		int mostRecentIteration;
-		int iterationsSinceKept = 0;
-		if(!backups.empty()){
-			mostRecentName = backups.back();
-			backups.pop_back();
-			std::string::size_type n = mostRecentName.find( '_' );
-			mostRecentDate = stoi(mostRecentName.substr(0, n-1));
-			mostRecentIteration = stoi(mostRecentName.substr(n+1));
-		}
-		while(!backups.empty()){
-			string currName = backups.back();
-			backups.pop_back();
-			std::string::size_type n = mostRecentName.find( '_' );
-			int currDate = stoi(mostRecentName.substr(0, n-1));
-			int currIteration = stoi(mostRecentName.substr(n+1));
-			if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
-				iterationsSinceKept = 0;
-			} else {
-				++iterationsSinceKept;
-				unlink(currName.c_str());
-			}
-		}
-		entry = readdir(dir);
-	}
-	closedir(dir);
-	return;
+    std::vector<string> backups;
+    DIR *dir_backups = opendir(entry->d_name);
+    struct dirent *backup = readdir(dir_backups);
+    while(backup != nullptr){
+      if( parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
+          selfDir.compare(backup->d_name) != 0){
+        backups.push_back(backup->d_name);
+        backup = readdir(dir_backups);
+      }
+    }
+    //alphabetical should make it oldest->newest
+    std::sort(backups.begin(), backups.end());
+    //get most recent value against which to compare rest
+    string mostRecentName;
+    int mostRecentDate;
+    int mostRecentIteration;
+    int iterationsSinceKept = 0;
+    if(!backups.empty()){
+      mostRecentName = backups.back();
+      backups.pop_back();
+      std::string::size_type n = mostRecentName.find( '_' );
+      mostRecentDate = stoi(mostRecentName.substr(0, n-1));
+      mostRecentIteration = stoi(mostRecentName.substr(n+1));
+    }
+    while(!backups.empty()){
+      string currName = backups.back();
+      backups.pop_back();
+      std::string::size_type n = mostRecentName.find( '_' );
+      int currDate = stoi(mostRecentName.substr(0, n-1));
+      int currIteration = stoi(mostRecentName.substr(n+1));
+      if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
+        iterationsSinceKept = 0;
+      } else {
+        ++iterationsSinceKept;
+        unlink(currName.c_str());
+      }
+    }
+    entry = readdir(dir);
+  }
+  closedir(dir);
+  return;
 }
 
 //work way down the directory tree
 //everytime it sees a .elephant_snapshot folder, call cleanup
 static void traverse_directory_tree(const string current_directory){
-	cerr << "traversting to this dir " << current_directory << std::endl;
-	DIR *dir = opendir(current_directory.c_str());
-	struct dirent *entry = readdir(dir);
-	//read out files one at a time
-	while (entry != NULL)
+  cerr << "traversting to this dir " << current_directory << std::endl;
+  DIR *dir = opendir(current_directory.c_str());
+  struct dirent *entry = readdir(dir);
+  //read out files one at a time
+  while (entry != nullptr)
   {
-		//cerr << "before if: " << current_directory+"/"+entry->d_name << std::endl;
-		if(parentDir.compare(entry->d_name) != 0 && 
-			selfDir.compare(entry->d_name) != 0){ //dont want to check .. and .
-			//stat to check if its a directory
-			struct stat st;
-			lstat((current_directory+"/"+entry->d_name).c_str(), &st);
-			cerr << "just stated: " << current_directory+"/"+entry->d_name << std::endl;
-			if(S_ISDIR(st.st_mode)){
-				//clean in the snapshot_directory, keep traversing otherwise
-				if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
-					cleanup_backups(current_directory+"/"+entry->d_name);
-				} else {
-					traverse_directory_tree(current_directory+"/"+entry->d_name);
-				}
-			}
-		}
-		entry = readdir(dir);
+    //cerr << "before if: " << current_directory+"/"+entry->d_name << std::endl;
+    if(parentDir.compare(entry->d_name) != 0 && 
+      selfDir.compare(entry->d_name) != 0){ //dont want to check .. and .
+      //stat to check if its a directory
+      struct stat st;
+      lstat((current_directory+"/"+entry->d_name).c_str(), &st);
+      cerr << "just stated: " << current_directory+"/"+entry->d_name << std::endl;
+      if(S_ISDIR(st.st_mode)){
+        //clean in the snapshot_directory, keep traversing otherwise
+        if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
+          cleanup_backups(current_directory+"/"+entry->d_name);
+        } else {
+          traverse_directory_tree(current_directory+"/"+entry->d_name);
+        }
+      }
+    }
+    entry = readdir(dir);
   }
   closedir(dir);
-	return;
+  return;
 }
 
 static void collectGarbage(){
-	while(true){
-		sleep(GARBAGE_INTERVAL);
-		traverse_directory_tree(mirrordir);
-	}
+  while(true){
+    sleep(GARBAGE_INTERVAL);
+    traverse_directory_tree(mirrordir);
+  }
 }
 
 static int xmp_getattr(const char *cpath, struct stat *stbuf)
@@ -196,9 +196,9 @@ static int xmp_getattr(const char *cpath, struct stat *stbuf)
   int res;
 
   string path(cpath);
-	cerr << path << std::endl;
+  cerr << path << std::endl;
   string mirrorpath = mirrordir + path;
-	cerr << mirrorpath << std::endl;
+  cerr << mirrorpath << std::endl;
   res = lstat(mirrorpath.c_str(), stbuf);
   if (res == -1)
     return -errno;
@@ -546,19 +546,19 @@ static struct fuse_operations xmp_oper = {
 int main(int argc, char *argv[])
 {
   umask(0);
-	
-	char path[PATH_MAX];
-	getcwd(path, PATH_MAX);
-	string mount_folder = argv[argc-1]; //last argument is the mount folder
-	mirrordir = path;
-	mountdir = path;
-	mirrordir += "/." + mount_folder;
-	mountdir += "/" + mount_folder;
-	
-	//sketchy permissions for now, need to fix this
-	mkdir(mirrordir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ); 
-	cerr << mirrordir << std::endl;
-	std::thread garbage_collection(collectGarbage);
-	
+  
+  char path[PATH_MAX];
+  getcwd(path, PATH_MAX);
+  string mount_folder = argv[argc-1]; //last argument is the mount folder
+  mirrordir = path;
+  mountdir = path;
+  mirrordir += "/." + mount_folder;
+  mountdir += "/" + mount_folder;
+  
+  //sketchy permissions for now, need to fix this
+  mkdir(mirrordir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ); 
+  cerr << mirrordir << std::endl;
+  std::thread garbage_collection(collectGarbage);
+  
   return fuse_main(argc, argv, &xmp_oper, NULL);
 }
