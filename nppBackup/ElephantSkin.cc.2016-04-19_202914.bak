@@ -32,32 +32,23 @@
 #endif
 #include <sys/wait.h>
 #include <string>
+#include <string>
 #include <iostream>
 #include <array>
-#include <tuple>
 #include <thread>
-#include <vector>
-#include <algorithm>
 
 using std::string;
 using std::cout;
 using std::cerr;
-using std::endl;
 
-static string mirrordir;
-
-static const string term_red = "[0;31m";
-static const string term_yellow = "[0;33m";
-static const string term_reset = "[0;0m";
-
-static int GARBAGE_INTERVAL = 5; //how often to garbage collect in seconds
-static string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
-static int LANDMARK_AGE = 604800;  //the amount of time (in seconds) to keep all
-                                   //backups, default to 7 days
-static int LANDMARK_AMOUNT = 50;   //how many version of a file to keep before
-                                   //cleaning some up 
-string parentDir = "..";
-string selfDir = ".";                           
+string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
+string mountDir;
+int GARBAGE_INTERVAL = 300; //how often to garbage collect in seconds
+string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
+int LANDMARK_AGE = 604800; 	//the amount of time (in seconds) to keep all
+														//backups, default to 7 days
+int LANDMARK_AMOUNT = 50;		//how many version of a file to keep before
+														//cleaning some up 	
 
 static void copyFile(const string& from, const string& to)
 {
@@ -85,184 +76,101 @@ static void copyFile(const string& from, const string& to)
   }
 }
 
-// Given path, return the child name (part after last /) and parent name (the
-// rest of it, not including the /. Return empty string for root directory.
-std::tuple<string, string> break_off_last_path_entry(const string& path) {
-
-  size_t last_delim_pos = path.find_last_of('/');
-  if (last_delim_pos == string::npos) {
-    cerr << "Was given a string without a slash..." << endl;
-    exit(2);
-  }
-
-  string parent_path = path.substr(0, last_delim_pos);
-  
-  // Return (parent, child)
-  return std::make_tuple(parent_path, path.substr(last_delim_pos+1));
-}
-
-
-static void backupFile(const string& path) {
-  // Get filename, which is the current time in ISO8601 format
-  time_t now;
-  time(&now);
-  std::array<char, sizeof "2016-04-24T18:21:45Z"> timebuf;
-  strftime(timebuf.data(), timebuf.size(), "%FT%TZ", gmtime(&now));
-  string timestring(timebuf.begin(), timebuf.end());
-
-  string containing_dir, filename;
-  std::tie(containing_dir, filename) = break_off_last_path_entry(path);
-
-  // Make .elephant_snapshots directory
-  string newLocationBuilder = containing_dir + SNAPSHOT_DIRECTORY_NAME;
-  cerr << "Making" << newLocationBuilder << endl;
-  int err = mkdir( newLocationBuilder.c_str(), 0700);
-  // If we got an error that's not a "file already exists" error
-  if (err == -1 && errno != EEXIST) {
-    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
-  }
-
-  // Make .snapshots/thefile directory
-  newLocationBuilder += "/" + filename;
-  cerr << "Making" << newLocationBuilder << endl;
-  err = mkdir( newLocationBuilder.c_str(), 0700);
-  // If we got an error that's not a "file already exists" error
-  if (err == -1 && errno != EEXIST) {
-    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
-  }
-
-  // Copy the file to .snapsots/thefile/thetime
-  // TODO: Make this consistent with the garbage collection format
-  newLocationBuilder += "/" + timestring;
-  cerr << "Copying to " << newLocationBuilder << endl;
-  copyFile(path, newLocationBuilder);
-}
-
 //the function to determine whether to keep a file past its landmark
-static bool keepFileEvaluation( const int time_newest,
-                                const int time_curr,
-                                const int iteration_newest, 
-                                const int iteration_curr, 
-                                const int iterations_since_last_keep){
-  //some smart function to see how often to keep
-  int keep_threshold = 3; //temporary value
-  
-  cerr << "newest iter " << iteration_newest << " current iter " << iteration_curr << " since kept " << iterations_since_last_keep << std::endl;
-  //first check if the backup is new enough and not too many have been stored
-  //if so, automatically keep it, otherwise compare against function
-  if((iteration_newest - iteration_curr) > LANDMARK_AMOUNT or (time_curr - time_newest) > LANDMARK_AGE){
-    if(iterations_since_last_keep >= keep_threshold){
-      return true;
-    } else {
-      return false;
-    }
-  } else {
-    return true;
-  }
+static bool keepFileEvaluation(	const int time_newest,
+																const int time_curr,
+																const int iteration_newest, 
+																const int iteration_curr, 
+																const int iterations_since_last_keep){
+	//some smart function to see how often to keep
+	int keep_threshold = 3; //temporary value
+	
+	//first check if the backup is new enough and not too many have been stored
+	//if so, automatically keep it, otherwise compare against function
+	if((iteration_newest - iteration_curr) > LANDMARK_AMOUNT or (time_curr - time_newest) > LANDMARK_AGE){
+		if(iterations_since_last_keep >= keep_threshold){
+			return true;
+		} else {
+			return false;
+		}
+	} else {
+		return true;
+	}
 }
 
 static void cleanup_backups(const string current_directory){
-  //clean one file at a time by drilling into its directory
-  cerr<< "entering backups folder " << current_directory<< std::endl;
-  DIR *dir = opendir(current_directory.c_str());
-  struct dirent *entry = readdir(dir);
-  while (entry != nullptr) {
-    if( parentDir.compare(entry->d_name)  != 0 &&
-        selfDir.compare(entry->d_name)    != 0){
-      cerr<< "In cleanup if: " << entry->d_name << std::endl;  
-      std::vector<string> backups;
-      string next_path = ((string)current_directory + "/" + (string)entry->d_name);
-      cerr << "opening path: " << next_path << std::endl;
-      DIR *dir_backups = opendir(next_path.c_str());
-      struct dirent *backup = readdir(dir_backups);
-      cerr<< "Current Backup:" << backup->d_name << std::endl;
-      while(backup != nullptr){
-        if( parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
-            selfDir.compare(backup->d_name) != 0){
-          cerr << "Adding to backup list " << backup->d_name << std::endl;
-          backups.push_back(backup->d_name);
-        }
-        backup = readdir(dir_backups);
-      }
-      closedir(dir_backups);
-      //cerr << "after abort test-5" << std::endl;
-      //alphabetical should make it oldest->newest
-      std::sort(backups.begin(), backups.end());
-      //get most recent value against which to compare rest
-      string mostRecentName;
-      int mostRecentDate;
-      int mostRecentIteration;
-      int iterationsSinceKept = 0;
-      //cerr << "after abort test-1" << std::endl;
-      if(!backups.empty()){
-        mostRecentName = backups.back();
-        backups.pop_back();
-        std::string::size_type n = mostRecentName.find( '_' );
-        mostRecentDate = stoi(mostRecentName.substr(0, n));
-        //cerr << "date " << mostRecentDate << std::endl;
-        mostRecentIteration = stoi(mostRecentName.substr(n+1));
-        //cerr << "iteration " << mostRecentIteration << std::endl;
-      }
-      cerr << "after abort test1" << std::endl;
-      while(!backups.empty()){
-        string currName = backups.back();
-        backups.pop_back();
-        std::string::size_type n = currName.find( '_' );
-        int currDate = stoi(currName.substr(0, n));
-        int currIteration = stoi(currName.substr(n+1));
-        if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
-          iterationsSinceKept = 0;
-        } else {
-          ++iterationsSinceKept;
-          string full_dir = ((string)current_directory + "/" + (string)entry->d_name + "/" + currName);
-          cerr << "unlinking: " << full_dir << std::endl;
-          unlink(full_dir.c_str());
-        }
-      }
-      cerr << "after abort test15" << std::endl;
-    }
-    entry = readdir(dir);
-  }
-  closedir(dir);
-  return;
+	//clean one file at a time by drilling into its directory
+	DIR *dir = opendir(current_directory.c_str());
+	struct dirent *entry = readdir(dir);
+	while (entry != NULL)
+  {
+		std::vector<string> backups;
+		DIR *dir_backups = opendir(entry->d_name);
+		struct dirent *backup = readdir(dir_backups);
+		while(backup != NULL){
+			backups.push_back(backup->d_name[]);
+			backup = readdir(dir_backups);
+		}
+		//alphabetical should make it oldest->newest
+		std::sort(backups.begin(), backups.end());
+		//get most recent value against which to compare rest
+		if(!backups.empty()){
+			string mostRecentName = backups.back();
+			backups.pop_back();
+			std::string::size_type n = mostRecentName.find( '_' );
+			int mostRecentDate = stoi(mostRecentName.substr(0, n-1));
+			int mostRecentIteration = stoi(mostRecentName.substr(n+1));
+		}
+		int iterationsSinceKept = 0;
+		while(!backups.empty()){
+			string currName = backups.back();
+			backups.pop_back();
+			std::string::size_type n = mostRecentName.find( '_' );
+			int currDate = stoi(mostRecentName.substr(0, n-1));
+			int currIteration = stoi(mostRecentName.substr(n+1));
+			if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
+				iterationSinceKept = 0;
+			} else {
+				++iterationsSinceKept;
+				unlink(currName);
+			}
+		}
+		entry = readdir(dir);
+	}
+	closedir(dir);
+	return;
 }
 
 //work way down the directory tree
 //everytime it sees a .elephant_snapshot folder, call cleanup
 static void traverse_directory_tree(const string current_directory){
-  cerr << "traversting to this dir " << current_directory << std::endl;
-  DIR *dir = opendir(current_directory.c_str());
-  struct dirent *entry = readdir(dir);
-  //read out files one at a time
-  while (entry != nullptr)
+	DIR *dir = opendir(current_directory.c_str());
+	struct dirent *entry = readdir(dir);
+	//read out files one at a time
+	while (entry != NULL)
   {
-    //cerr << "before if: " << current_directory+"/"+entry->d_name << std::endl;
-    if(parentDir.compare(entry->d_name) != 0 && 
-      selfDir.compare(entry->d_name) != 0){ //dont want to check .. and .
-      //stat to check if its a directory
-      struct stat st;
-      lstat((current_directory+"/"+entry->d_name).c_str(), &st);
-      cerr << "just stated: " << current_directory+"/"+entry->d_name << std::endl;
-      if(S_ISDIR(st.st_mode)){
-        //clean in the snapshot_directory, keep traversing otherwise
-        if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
-          cleanup_backups(current_directory+"/"+entry->d_name);
-        } else {
-          traverse_directory_tree(current_directory+"/"+entry->d_name);
-        }
-      }
-    }
-    entry = readdir(dir);
+		//stat to check if its a directory
+		struct stat st;
+		lstat(dent->d_name, &st);
+		if(S_ISDIR(st.st_mode)){
+			//clean in the snapshot_directory, keep traversing otherwise
+			if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
+				cleanup_backups(current_directory+"/"+entry->d_name);
+			} else {
+				traverse_directory_tree(current_directory+"/"+entry->d_name);
+			}
+		}
+		entry = readdir(dir);
   }
   closedir(dir);
-  return;
+	return;
 }
 
 static void collectGarbage(){
-  while(true){
-    sleep(GARBAGE_INTERVAL);
-    traverse_directory_tree(mirrordir);
-  }
+	while(true){
+		sleep(GARBAGE_INTERVAL);
+		traverse_directory_tree(mountDir);
+	}
 }
 
 static int xmp_getattr(const char *cpath, struct stat *stbuf)
@@ -270,9 +178,7 @@ static int xmp_getattr(const char *cpath, struct stat *stbuf)
   int res;
 
   string path(cpath);
-  cerr << path << std::endl;
   string mirrorpath = mirrordir + path;
-  cerr << mirrorpath << std::endl;
   res = lstat(mirrorpath.c_str(), stbuf);
   if (res == -1)
     return -errno;
@@ -375,12 +281,8 @@ static int xmp_unlink(const char *cpath)
 {
   int res;
 
-
   string path(cpath);
   string mirrorpath = mirrordir + path;
-
-  backupFile(mirrorpath);
-
   res = unlink(mirrorpath.c_str());
   if (res == -1)
     return -errno;
@@ -477,7 +379,8 @@ static int xmp_truncate(const char *cpath, off_t size)
   string path(cpath);
   string mirrorpath = mirrordir + path;
 
-  backupFile(mirrorpath);
+  // Make a copy of the file first!
+  copyFile(mirrorpath, "/home/adam/lastTruncatedFile");
 
   res = truncate(mirrorpath.c_str(), size);
   if (res == -1)
@@ -549,9 +452,6 @@ static int xmp_write(const char *cpath, const char *buf, size_t size,
   (void) fi;
   string path(cpath);
   string mirrorpath = mirrordir + path;
-
-  backupFile(mirrorpath);
-
   fd = open(mirrorpath.c_str(), O_WRONLY);
   if (fd == -1)
     return -errno;
@@ -626,21 +526,12 @@ static struct fuse_operations xmp_oper = {
 int main(int argc, char *argv[])
 {
   umask(0);
-
-  if (argc < 2) {
-    cerr << "First argument should be the backend directory" << endl;
-    return 2;
-  }
-
-  char* c_cwd = get_current_dir_name();
-  mirrordir = string(c_cwd) + "/" + argv[1];
-  free(c_cwd);
-  ++argv;
-  --argc;
-
-  cout << "Opening " << mirrordir << " as backend directory" << endl;
-
-  std::thread garbage_collection(collectGarbage);
-  
+	
+	char path[PATH_MAX];
+	getwd(path);
+	strcat(path, argv[argc-1]); //last argument is the mount folder
+	mountDir 	= path;
+	std::thread garbage_collection(collectGarbage);
+	
   return fuse_main(argc, argv, &xmp_oper, NULL);
 }
