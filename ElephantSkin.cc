@@ -41,6 +41,8 @@
 #include <algorithm>
 #include <chrono>
 #include <iomanip>
+#include <sstream>
+#include <functional>
 
 using std::string;
 using std::cout;
@@ -55,9 +57,9 @@ static const string term_reset = "[0;0m";
 
 static int GARBAGE_INTERVAL = 5; //how often to garbage collect in seconds
 static string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
-static int LANDMARK_AGE = 604800;  //the amount of time (in seconds) to keep all
+static int LANDMARK_AGE = 10;//604800;  //the amount of time (in seconds) to keep all
                                    //backups, default to 7 days
-static int LANDMARK_AMOUNT = 50;   //how many version of a file to keep before
+static int LANDMARK_AMOUNT = 5;   //how many version of a file to keep before
                                    //cleaning some up 
 
 using clk = std::chrono::system_clock;
@@ -326,9 +328,9 @@ static void cleanup_backups(const string& current_directory){
         prevIteration = currIteration;
       } else {
         //++iterationsSinceKept;
-        //string full_dir = current_directory + "/" + entry->d_name + "/" + currName);
+        string full_dir = next_path + "/" + currName;
         //cerr << "unlinking: " << full_dir << std::endl;
-        //unlink(full_dir.c_str());
+        unlink(full_dir.c_str());
       }
     }
 
