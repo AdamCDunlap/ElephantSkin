@@ -183,9 +183,11 @@ static void directory_map(const string& dirname,
 //the function to determine whether to keep a file past its landmark
 static bool keepFileEvaluation( const std::time_t& time_newest,
                                 const std::time_t& time_curr,
-                                const int iteration_newest, 
-                                const int iteration_curr, 
-                                const int iterations_since_last_keep){
+                                const int iteration_newest,
+                                const int iteration_prev,
+                                const int iteration_curr){
+                                    
+  int iterations_since_last_keep = iteration_prev - iteration_curr;
   //some smart function to see how often to keep
   int keep_threshold = 3; //temporary value
   
@@ -297,17 +299,17 @@ static void cleanup_backups(const string& current_directory){
     string mostRecentName;
     int mostRecentDate;
     int mostRecentIteration;
-    int iterationsSinceKept = 0;
+    int prevIteration;
     //cerr << "after abort test-1" << std::endl;
     if(!backups.empty()){
 
       mostRecentName = backups.back();
       backups.pop_back();
-
+      prevIteration = mostRecentIteration;
       std::tie(mostRecentDate, mostRecentIteration) =
         get_time_and_iteration_from_filename(mostRecentName);
     }
-    cerr << "after abort test1" << std::endl;
+
     while(!backups.empty()){
       string currName = backups.back();
       backups.pop_back();
@@ -319,16 +321,16 @@ static void cleanup_backups(const string& current_directory){
       std::tie(thisFileTime, currIteration) =
         get_time_and_iteration_from_filename(currName);
 
-      if(keepFileEvaluation(now_as_time_t, thisFileTime, mostRecentIteration, currIteration, iterationsSinceKept)){
-        iterationsSinceKept = 0;
+      if(keepFileEvaluation(now_as_time_t, thisFileTime, mostRecentIteration, prevIteration, currIteration)){
+        //iterationsSinceKept = 0;
+        prevIteration = currIteration;
       } else {
-        ++iterationsSinceKept;
+        //++iterationsSinceKept;
         //string full_dir = current_directory + "/" + entry->d_name + "/" + currName);
         //cerr << "unlinking: " << full_dir << std::endl;
         //unlink(full_dir.c_str());
       }
     }
-    cerr << "after abort test15" << std::endl;
 
   });
 
