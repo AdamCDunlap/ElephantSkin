@@ -35,14 +35,26 @@
 #include <string>
 #include <iostream>
 #include <array>
+<<<<<<< HEAD
 #include <thread>
 #include <vector>
 #include <algorithm>
+=======
+#include <tuple>
+>>>>>>> refs/remotes/origin/master
 
 using std::string;
 using std::cout;
 using std::cerr;
+using std::endl;
 
+static string mirrordir;
+
+static const string term_red = "[0;31m";
+static const string term_yellow = "[0;33m";
+static const string term_reset = "[0;0m";
+
+<<<<<<< HEAD
 //string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
 string mirrordir;
 string mountdir;
@@ -54,6 +66,8 @@ int LANDMARK_AMOUNT = 50;   //how many version of a file to keep before
                             //cleaning some up 
 string parentDir = "..";
 string selfDir = ".";                           
+=======
+>>>>>>> refs/remotes/origin/master
 
 static void copyFile(const string& from, const string& to)
 {
@@ -81,6 +95,7 @@ static void copyFile(const string& from, const string& to)
   }
 }
 
+<<<<<<< HEAD
 //the function to determine whether to keep a file past its landmark
 static bool keepFileEvaluation( const int time_newest,
                                 const int time_curr,
@@ -208,6 +223,58 @@ static void collectGarbage(){
     sleep(GARBAGE_INTERVAL);
     traverse_directory_tree(mirrordir);
   }
+=======
+// Given path, return the child name (part after last /) and parent name (the
+// rest of it, not including the /. Return empty string for root directory.
+std::tuple<string, string> break_off_last_path_entry(const string& path) {
+
+  size_t last_delim_pos = path.find_last_of('/');
+  if (last_delim_pos == string::npos) {
+    cerr << "Was given a string without a slash..." << endl;
+    exit(2);
+  }
+
+  string parent_path = path.substr(0, last_delim_pos);
+  
+  // Return (parent, child)
+  return std::make_tuple(parent_path, path.substr(last_delim_pos+1));
+}
+
+
+static void backupFile(const string& path) {
+  // Get filename, which is the current time in ISO8601 format
+  time_t now;
+  time(&now);
+  std::array<char, sizeof "2016-04-24T18:21:45Z"> timebuf;
+  strftime(timebuf.data(), timebuf.size(), "%FT%TZ", gmtime(&now));
+  string timestring(timebuf.begin(), timebuf.end());
+
+  string containing_dir, filename;
+  std::tie(containing_dir, filename) = break_off_last_path_entry(path);
+
+  // Make .snapshots directory
+  string newLocationBuilder = containing_dir + "/.snapshots";
+  cerr << "Making" << newLocationBuilder << endl;
+  int err = mkdir( newLocationBuilder.c_str(), 0700);
+  // If we got an error that's not a "file already exists" error
+  if (err == -1 && errno != EEXIST) {
+    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
+  }
+
+  // Make .snapshots/thefile directory
+  newLocationBuilder += "/" + filename;
+  cerr << "Making" << newLocationBuilder << endl;
+  err = mkdir( newLocationBuilder.c_str(), 0700);
+  // If we got an error that's not a "file already exists" error
+  if (err == -1 && errno != EEXIST) {
+    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
+  }
+
+  // Copy the file to .snapsots/thefile/thetime
+  newLocationBuilder += "/" + timestring;
+  cerr << "Copying to " << newLocationBuilder << endl;
+  copyFile(path, newLocationBuilder);
+>>>>>>> refs/remotes/origin/master
 }
 
 static int xmp_getattr(const char *cpath, struct stat *stbuf)
@@ -320,8 +387,12 @@ static int xmp_unlink(const char *cpath)
 {
   int res;
 
+
   string path(cpath);
   string mirrorpath = mirrordir + path;
+
+  backupFile(mirrorpath);
+
   res = unlink(mirrorpath.c_str());
   if (res == -1)
     return -errno;
@@ -418,8 +489,7 @@ static int xmp_truncate(const char *cpath, off_t size)
   string path(cpath);
   string mirrorpath = mirrordir + path;
 
-  // Make a copy of the file first!
-  copyFile(mirrorpath, "/home/adam/lastTruncatedFile");
+  backupFile(mirrorpath);
 
   res = truncate(mirrorpath.c_str(), size);
   if (res == -1)
@@ -491,6 +561,9 @@ static int xmp_write(const char *cpath, const char *buf, size_t size,
   (void) fi;
   string path(cpath);
   string mirrorpath = mirrordir + path;
+
+  backupFile(mirrorpath);
+
   fd = open(mirrorpath.c_str(), O_WRONLY);
   if (fd == -1)
     return -errno;
@@ -565,6 +638,7 @@ static struct fuse_operations xmp_oper = {
 int main(int argc, char *argv[])
 {
   umask(0);
+<<<<<<< HEAD
   
   char path[PATH_MAX];
   getcwd(path, PATH_MAX);
@@ -579,5 +653,21 @@ int main(int argc, char *argv[])
   cerr << mirrordir << std::endl;
   std::thread garbage_collection(collectGarbage);
   
+=======
+
+  if (argc < 2) {
+    cerr << "First argument should be the backend directory" << endl;
+    return 2;
+  }
+
+  char* c_cwd = get_current_dir_name();
+  mirrordir = string(c_cwd) + "/" + argv[1];
+  free(c_cwd);
+  ++argv;
+  --argc;
+
+  cout << "Opening " << mirrordir << " as backend directory" << endl;
+
+>>>>>>> refs/remotes/origin/master
   return fuse_main(argc, argv, &xmp_oper, NULL);
 }
