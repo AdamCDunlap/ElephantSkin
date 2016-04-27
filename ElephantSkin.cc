@@ -31,6 +31,7 @@
 #include <sys/xattr.h>
 #endif
 #include <sys/wait.h>
+#include <cassert>
 #include <string>
 #include <iostream>
 #include <array>
@@ -38,6 +39,8 @@
 #include <thread>
 #include <vector>
 #include <algorithm>
+#include <chrono>
+#include <iomanip>
 
 using std::string;
 using std::cout;
@@ -56,6 +59,11 @@ static int LANDMARK_AGE = 604800;  //the amount of time (in seconds) to keep all
                                    //backups, default to 7 days
 static int LANDMARK_AMOUNT = 50;   //how many version of a file to keep before
                                    //cleaning some up 
+
+using clk = std::chrono::system_clock;
+// year-month-day-hour:minutes:seconds
+static string backup_timestamp_fmt = "%Y-%m-%d-%T";
+
 string parentDir = "..";
 string selfDir = ".";                           
 
@@ -101,46 +109,80 @@ std::tuple<string, string> break_off_last_path_entry(const string& path) {
   return std::make_tuple(parent_path, path.substr(last_delim_pos+1));
 }
 
+//class iteratable_directory {
+//  const string dirname_;
+// public:
+//  iteratable_directory(const string& dirname) 
+//    : dirname_(dirname)
+//  {
+//  }
+//
+//  class iterator {
+//    DIR* dir;
+//    iterator(const string& dirname) 
+//      : dir(opendir(dirname.c_str()))
+//    {
+//    }
+//    iterator(bool)
+//      : dir(nullptr)
+//    {
+//    }
+//    friend class iteratable_directory;
+//   public:
+//    string operator*() {
+//      dirent entry;
+//      dirent* entry_ptr;
+//      if(readdir_r(dir, &entry, &entry_ptr) != 0) {
+//        cerr << "Readdir failed!" << endl;
+//      }
+//      if (entry_ptr == nullptr) {
+//        // This means we're done
+//        dir = nullptr;
+//      }
+//      return string(entry.d_name);
+//    }
+//    iteratable_directory::iterator& operator++() {
+//      return *this;
+//    }
+//    
+//  };
+//
+//  iterator begin() {
+//    return iterator(dirname_);
+//  }
+//  iterator end() {
+//    return iterator(false);
+//  }
+//};
 
-static void backupFile(const string& path) {
-  // Get filename, which is the current time in ISO8601 format
-  time_t now;
-  time(&now);
-  std::array<char, sizeof "2016-04-24T18:21:45Z"> timebuf;
-  strftime(timebuf.data(), timebuf.size(), "%FT%TZ", gmtime(&now));
-  string timestring(timebuf.begin(), timebuf.end());
-
-  string containing_dir, filename;
-  std::tie(containing_dir, filename) = break_off_last_path_entry(path);
-
-  // Make .elephant_snapshots directory
-  string newLocationBuilder = containing_dir + SNAPSHOT_DIRECTORY_NAME;
-  cerr << "Making" << newLocationBuilder << endl;
-  int err = mkdir( newLocationBuilder.c_str(), 0700);
-  // If we got an error that's not a "file already exists" error
-  if (err == -1 && errno != EEXIST) {
-    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
+// Reads the given directory and calls callback with the filename for every
+// file that is not . or ..
+static void directory_map(const string& dirname,
+      std::function<void(const string&)> callback) {
+  DIR* dir = opendir(dirname.c_str());
+  while(true) {
+    dirent entry;
+    dirent* entry_ptr;
+    if(readdir_r(dir, &entry, &entry_ptr) != 0) {
+      cerr << "Readdir failed!" << endl;
+      exit(3);
+    }
+    if (entry_ptr == nullptr) {
+      // This means we're done
+      break;
+    }
+    std::string filename(entry.d_name);
+    if(filename == parentDir || filename == selfDir) {
+      continue;
+    }
+    callback(filename);
   }
-
-  // Make .snapshots/thefile directory
-  newLocationBuilder += "/" + filename;
-  cerr << "Making" << newLocationBuilder << endl;
-  err = mkdir( newLocationBuilder.c_str(), 0700);
-  // If we got an error that's not a "file already exists" error
-  if (err == -1 && errno != EEXIST) {
-    cerr << "Couldn't make " << newLocationBuilder << " error was " << strerror(errno) << "(" << errno << ")" << endl;
-  }
-
-  // Copy the file to .snapsots/thefile/thetime
-  // TODO: Make this consistent with the garbage collection format
-  newLocationBuilder += "/" + timestring;
-  cerr << "Copying to " << newLocationBuilder << endl;
-  copyFile(path, newLocationBuilder);
+  closedir(dir);
 }
 
 //the function to determine whether to keep a file past its landmark
-static bool keepFileEvaluation( const int time_newest,
-                                const int time_curr,
+static bool keepFileEvaluation( const std::time_t& time_newest,
+                                const std::time_t& time_curr,
                                 const int iteration_newest, 
                                 const int iteration_curr, 
                                 const int iterations_since_last_keep){
@@ -161,70 +203,206 @@ static bool keepFileEvaluation( const int time_newest,
   }
 }
 
-static void cleanup_backups(const string current_directory){
+// Given a filename of a backup, return its creation time and its iteration
+// number
+std::tuple<time_t, size_t> get_time_and_iteration_from_filename
+    (const string& name) {
+  std::stringstream namestringstream(name);
+
+  std::tm filetime_as_tm;
+  char underscore;
+  size_t currIteration;
+  namestringstream
+    >> std::get_time(&filetime_as_tm, backup_timestamp_fmt.c_str())
+    >> underscore >> currIteration;
+  assert(!namestringstream.fail());
+  std::time_t filetime_as_time_t = std::mktime(&filetime_as_tm);
+
+  cout << term_yellow << "From name " << name << " we got time " <<
+   std::put_time(&filetime_as_tm, backup_timestamp_fmt.c_str()) <<
+     " and iteration " << currIteration <<
+    " and underscore " << underscore << term_reset << endl;
+  assert(underscore == '_');
+
+  return std::make_tuple(filetime_as_time_t, currIteration);
+}
+
+static void backupFile(const string& path) {
+  string containing_dir, filename;
+  std::tie(containing_dir, filename) = break_off_last_path_entry(path);
+
+  // Make .elephant_snapshots directory
+  std::stringstream newLocationBuilder;
+  newLocationBuilder << containing_dir << "/" << SNAPSHOT_DIRECTORY_NAME;
+  cerr << "Making" << newLocationBuilder.str() << endl;
+  int err = mkdir( newLocationBuilder.str().c_str(), 0700);
+  // If we got an error that's not a "file already exists" error
+  if (err == -1 && errno != EEXIST) {
+    cerr << "Couldn't make " << newLocationBuilder.str() << " error was " << strerror(errno) << "(" << errno << ")" << endl;
+  }
+
+  // Make .snapshots/thefile directory
+  newLocationBuilder << "/" << filename;
+  cerr << "Making" << newLocationBuilder.str() << endl;
+  err = mkdir( newLocationBuilder.str().c_str(), 0700);
+  // If we got an error that's not a "file already exists" error
+  if (err == -1 && errno != EEXIST) {
+    cerr << "Couldn't make " << newLocationBuilder.str() << " error was " << strerror(errno) << "(" << errno << ")" << endl;
+  }
+
+  // Get the current time in the right format
+  std::time_t timept_as_time_t = clk::to_time_t(clk::now());
+  std::tm* timept_as_tm = std::localtime(&timept_as_time_t);
+  std::stringstream time_stringstream;
+  time_stringstream << std::put_time(timept_as_tm, backup_timestamp_fmt.c_str());
+  string timestring = time_stringstream.str();
+
+  // Get the largest revision number in the directory
+  size_t largest_previous_revision_number = 0;
+  directory_map(newLocationBuilder.str(),
+    [&largest_previous_revision_number](const string& backup_name) {
+      size_t revision_number;
+      std::tie(std::ignore, revision_number) =
+        get_time_and_iteration_from_filename(backup_name);
+
+      largest_previous_revision_number
+        = std::max(largest_previous_revision_number, revision_number);
+
+  });
+
+  newLocationBuilder << "/" << timestring << "_" << largest_previous_revision_number+1;
+
+  // Copy the file to .snapsots/thefile/thetime
+  cerr << "Copying to " << newLocationBuilder.str() << endl;
+  copyFile(path, newLocationBuilder.str());
+}
+
+static void cleanup_backups(const string& current_directory){
   //clean one file at a time by drilling into its directory
   cerr<< "entering backups folder " << current_directory<< std::endl;
-  DIR *dir = opendir(current_directory.c_str());
-  struct dirent *entry = readdir(dir);
-  while (entry != nullptr) {
-    if( parentDir.compare(entry->d_name)  != 0 &&
-        selfDir.compare(entry->d_name)    != 0){
-      cerr<< "In cleanup if: " << entry->d_name << std::endl;  
-      std::vector<string> backups;
-      string next_path = ((string)current_directory + "/" + (string)entry->d_name);
-      cerr << "opening path: " << next_path << std::endl;
-      DIR *dir_backups = opendir(next_path.c_str());
-      struct dirent *backup = readdir(dir_backups);
-      cerr<< "Current Backup:" << backup->d_name << std::endl;
-      while(backup != nullptr){
-        if( parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
-            selfDir.compare(backup->d_name) != 0){
-          cerr << "Adding to backup list " << backup->d_name << std::endl;
-          backups.push_back(backup->d_name);
-        }
-        backup = readdir(dir_backups);
-      }
-      closedir(dir_backups);
-      //cerr << "after abort test-5" << std::endl;
-      //alphabetical should make it oldest->newest
-      std::sort(backups.begin(), backups.end());
-      //get most recent value against which to compare rest
-      string mostRecentName;
-      int mostRecentDate;
-      int mostRecentIteration;
-      int iterationsSinceKept = 0;
-      //cerr << "after abort test-1" << std::endl;
-      if(!backups.empty()){
-        mostRecentName = backups.back();
-        backups.pop_back();
-        std::string::size_type n = mostRecentName.find( '_' );
-        mostRecentDate = stoi(mostRecentName.substr(0, n));
-        //cerr << "date " << mostRecentDate << std::endl;
-        mostRecentIteration = stoi(mostRecentName.substr(n+1));
-        //cerr << "iteration " << mostRecentIteration << std::endl;
-      }
-      cerr << "after abort test1" << std::endl;
-      while(!backups.empty()){
-        string currName = backups.back();
-        backups.pop_back();
-        std::string::size_type n = currName.find( '_' );
-        int currDate = stoi(currName.substr(0, n));
-        int currIteration = stoi(currName.substr(n+1));
-        if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
-          iterationsSinceKept = 0;
-        } else {
-          ++iterationsSinceKept;
-          string full_dir = ((string)current_directory + "/" + (string)entry->d_name + "/" + currName);
-          cerr << "unlinking: " << full_dir << std::endl;
-          unlink(full_dir.c_str());
-        }
-      }
-      cerr << "after abort test15" << std::endl;
+
+  // For each backed up file in this directory...
+  directory_map(current_directory, [&current_directory](const string& backup_dir_name) {
+    // Vector of filenames for the backups for this file
+    std::vector<string> backups;
+    string next_path = current_directory + "/" + backup_dir_name;
+    cerr << "opening path: " << next_path << std::endl;
+
+    directory_map(next_path, [&backups](const string& backup_file_name) {
+      backups.push_back(backup_file_name);
+    });
+
+    std::sort(backups.begin(), backups.end());
+    //get most recent value against which to compare rest
+    string mostRecentName;
+    int mostRecentDate;
+    int mostRecentIteration;
+    int iterationsSinceKept = 0;
+    //cerr << "after abort test-1" << std::endl;
+    if(!backups.empty()){
+
+      mostRecentName = backups.back();
+      backups.pop_back();
+
+      std::tie(mostRecentDate, mostRecentIteration) =
+        get_time_and_iteration_from_filename(mostRecentName);
     }
-    entry = readdir(dir);
-  }
-  closedir(dir);
-  return;
+    cerr << "after abort test1" << std::endl;
+    while(!backups.empty()){
+      string currName = backups.back();
+      backups.pop_back();
+
+      std::time_t now_as_time_t = clk::to_time_t(clk::now());
+
+      std::time_t thisFileTime;
+      size_t currIteration;
+      std::tie(thisFileTime, currIteration) =
+        get_time_and_iteration_from_filename(currName);
+
+      if(keepFileEvaluation(now_as_time_t, thisFileTime, mostRecentIteration, currIteration, iterationsSinceKept)){
+        iterationsSinceKept = 0;
+      } else {
+        ++iterationsSinceKept;
+        //string full_dir = current_directory + "/" + entry->d_name + "/" + currName);
+        //cerr << "unlinking: " << full_dir << std::endl;
+        //unlink(full_dir.c_str());
+      }
+    }
+    cerr << "after abort test15" << std::endl;
+
+  });
+
+//  DIR *dir = opendir(current_directory.c_str());
+//  struct dirent *entry = readdir(dir);
+//  while (entry != nullptr) {
+//    if( parentDir.compare(entry->d_name)  != 0 &&
+//        selfDir.compare(entry->d_name)    != 0){
+//      cerr<< "In cleanup if: " << entry->d_name << std::endl;  
+//      std::vector<string> backups;
+//      string next_path = ((string)current_directory + "/" + (string)entry->d_name);
+//      cerr << "opening path: " << next_path << std::endl;
+//      DIR *dir_backups = opendir(next_path.c_str());
+//      struct dirent *backup = readdir(dir_backups);
+//      cerr<< "Current Backup:" << backup->d_name << std::endl;
+//      while(backup != nullptr){
+//        if( parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
+//            selfDir.compare(backup->d_name) != 0){
+//          cerr << "Adding to backup list " << backup->d_name << std::endl;
+//          backups.push_back(backup->d_name);
+//        }
+//        backup = readdir(dir_backups);
+//      }
+//      closedir(dir_backups);
+//      //cerr << "after abort test-5" << std::endl;
+//      //alphabetical should make it oldest->newest
+//      std::sort(backups.begin(), backups.end());
+//      //get most recent value against which to compare rest
+//      string mostRecentName;
+//      int mostRecentDate;
+//      int mostRecentIteration;
+//      int iterationsSinceKept = 0;
+//      //cerr << "after abort test-1" << std::endl;
+//      if(!backups.empty()){
+//        mostRecentName = backups.back();
+//        backups.pop_back();
+//        std::string::size_type n = mostRecentName.find( '_' );
+//        mostRecentDate = stoi(mostRecentName.substr(0, n));
+//        //cerr << "date " << mostRecentDate << std::endl;
+//        mostRecentIteration = stoi(mostRecentName.substr(n+1));
+//        //cerr << "iteration " << mostRecentIteration << std::endl;
+//      }
+//      cerr << "after abort test1" << std::endl;
+//      while(!backups.empty()){
+//        string currName = backups.back();
+//        backups.pop_back();
+//        std::string::size_type separator_pos = currName.find( '_' );
+//
+//
+//        std::stringstream time_stringstream;
+//        time_stringstream << currName.substr(0,separator_pos);
+//        std::tm filetime_as_tm;
+//        time_stringstream >> std::get_time(&filetime_as_tm, backup_timestamp_fmt.c_str());
+//        std::time_t filetime_as_time_t = std::mktime(&filetime_as_tm);
+//
+//        size_t currIteration = stoi(currName.substr(separator_pos+1));
+//
+//        std::time_t now_as_time_t = clk::to_time_t(clk::now());
+//
+//        if(keepFileEvaluation(now_as_time_t, filetime_as_time_t, mostRecentIteration, currIteration, iterationsSinceKept)){
+//          iterationsSinceKept = 0;
+//        } else {
+//          ++iterationsSinceKept;
+//          string full_dir = ((string)current_directory + "/" + (string)entry->d_name + "/" + currName);
+//          cerr << "unlinking: " << full_dir << std::endl;
+//          unlink(full_dir.c_str());
+//        }
+//      }
+//      cerr << "after abort test15" << std::endl;
+//    }
+//    entry = readdir(dir);
+//  }
+//  closedir(dir);
+//  return;
 }
 
 //work way down the directory tree
