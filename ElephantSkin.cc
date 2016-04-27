@@ -46,7 +46,7 @@ using std::cerr;
 //string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
 string mirrordir;
 string mountdir;
-int GARBAGE_INTERVAL = 5; //how often to garbage collect in seconds
+int GARBAGE_INTERVAL = 10; //how often to garbage collect in seconds
 string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
 int LANDMARK_AGE = 604800;  //the amount of time (in seconds) to keep all
                             //backups, default to 7 days
@@ -85,11 +85,14 @@ static void copyFile(const string& from, const string& to)
 static bool keepFileEvaluation( const int time_newest,
                                 const int time_curr,
                                 const int iteration_newest, 
-                                const int iteration_curr, 
-                                const int iterations_since_last_keep){
+                                const int iteration_prev,
+                                const int iteration_curr){
+                                 
+  int iterations_since_last_keep = iteration_prev - iteration_curr;
   //some smart function to see how often to keep
   int keep_threshold = 3; //temporary value
-  
+  //keep_threshold = (iteration_newest-iteration_curr-LANDMARK_AMOUNT);
+  //keep_threshold = keep_threshold*keep_threshold/4;
   cerr << "newest iter " << iteration_newest << " current iter " << iteration_curr << " since kept " << iterations_since_last_keep << std::endl;
   //first check if the backup is new enough and not too many have been stored
   //if so, automatically keep it, otherwise compare against function
@@ -112,13 +115,13 @@ static void cleanup_backups(const string current_directory){
   while (entry != nullptr) {
     if( parentDir.compare(entry->d_name)  != 0 &&
         selfDir.compare(entry->d_name)    != 0){
-      cerr<< "In cleanup if: " << entry->d_name << std::endl;  
+      //cerr<< "In cleanup if: " << entry->d_name << std::endl;  
       std::vector<string> backups;
       string next_path = ((string)current_directory + "/" + (string)entry->d_name);
-      cerr << "opening path: " << next_path << std::endl;
+      cerr << "Opening path: " << next_path << std::endl;
       DIR *dir_backups = opendir(next_path.c_str());
       struct dirent *backup = readdir(dir_backups);
-      cerr<< "Current Backup:" << backup->d_name << std::endl;
+      cerr<< "Most Recent Backup:" << backup->d_name << std::endl;
       while(backup != nullptr){
         if( parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
             selfDir.compare(backup->d_name) != 0){
@@ -128,15 +131,14 @@ static void cleanup_backups(const string current_directory){
         backup = readdir(dir_backups);
       }
       closedir(dir_backups);
-      //cerr << "after abort test-5" << std::endl;
       //alphabetical should make it oldest->newest
       std::sort(backups.begin(), backups.end());
       //get most recent value against which to compare rest
       string mostRecentName;
       int mostRecentDate;
       int mostRecentIteration;
-      int iterationsSinceKept = 0;
-      //cerr << "after abort test-1" << std::endl;
+      //int iterationsSinceKept = 0;
+      int prevIteration;
       if(!backups.empty()){
         mostRecentName = backups.back();
         backups.pop_back();
@@ -144,25 +146,25 @@ static void cleanup_backups(const string current_directory){
         mostRecentDate = stoi(mostRecentName.substr(0, n));
         //cerr << "date " << mostRecentDate << std::endl;
         mostRecentIteration = stoi(mostRecentName.substr(n+1));
+        prevIteration = mostRecentIteration;
         //cerr << "iteration " << mostRecentIteration << std::endl;
       }
-      cerr << "after abort test1" << std::endl;
       while(!backups.empty()){
         string currName = backups.back();
         backups.pop_back();
         std::string::size_type n = currName.find( '_' );
         int currDate = stoi(currName.substr(0, n));
         int currIteration = stoi(currName.substr(n+1));
-        if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, currIteration, iterationsSinceKept)){
-          iterationsSinceKept = 0;
+        if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, prevIteration, currIteration)){
+          //iterationsSinceKept = 0;
+          prevIteration = currIteration;
         } else {
-          ++iterationsSinceKept;
+          //++iterationsSinceKept;
           string full_dir = ((string)current_directory + "/" + (string)entry->d_name + "/" + currName);
           cerr << "unlinking: " << full_dir << std::endl;
           unlink(full_dir.c_str());
         }
       }
-      cerr << "after abort test15" << std::endl;
     }
     entry = readdir(dir);
   }
