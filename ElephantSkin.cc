@@ -219,7 +219,10 @@ std::tuple<time_t, size_t> get_time_and_iteration_from_filename
   namestringstream
     >> std::get_time(&filetime_as_tm, backup_timestamp_fmt.c_str())
     >> underscore >> currIteration;
-  assert(!namestringstream.fail());
+  if (namestringstream.fail()) {
+    cerr << term_red << "Parsing the filename failed on " << name << term_reset << endl;
+    return std::make_tuple(0,0);
+  }
   std::time_t filetime_as_time_t = std::mktime(&filetime_as_tm);
 
   cout << term_yellow << "From name " << name << " we got time " <<
@@ -266,6 +269,7 @@ static void backupFile(const string& path) {
   directory_map(newLocationBuilder.str(),
     [&largest_previous_revision_number](const string& backup_name) {
       size_t revision_number;
+      cerr << term_yellow << "Calling parse from backupFile" << term_reset << endl;
       std::tie(std::ignore, revision_number) =
         get_time_and_iteration_from_filename(backup_name);
 
@@ -307,9 +311,11 @@ static void cleanup_backups(const string& current_directory){
 
       mostRecentName = backups.back();
       backups.pop_back();
-      prevIteration = mostRecentIteration;
+
+      cerr << term_yellow << "Calling parse from cleanup_backups 1" << term_reset << endl;
       std::tie(mostRecentDate, mostRecentIteration) =
         get_time_and_iteration_from_filename(mostRecentName);
+      prevIteration = mostRecentIteration;
     }
 
     while(!backups.empty()){
@@ -320,6 +326,7 @@ static void cleanup_backups(const string& current_directory){
 
       std::time_t thisFileTime;
       size_t currIteration;
+      cerr << term_yellow << "Calling parse from cleanup_backups 2" << term_reset << endl;
       std::tie(thisFileTime, currIteration) =
         get_time_and_iteration_from_filename(currName);
 
@@ -412,32 +419,22 @@ static void cleanup_backups(const string& current_directory){
 //work way down the directory tree
 //everytime it sees a .elephant_snapshot folder, call cleanup
 static void traverse_directory_tree(const string current_directory){
-  cerr << "traversting to this dir " << current_directory << std::endl;
-  DIR *dir = opendir(current_directory.c_str());
-  struct dirent *entry = readdir(dir);
-  //read out files one at a time
-  while (entry != nullptr)
-  {
-    //cerr << "before if: " << current_directory+"/"+entry->d_name << std::endl;
-    if(parentDir.compare(entry->d_name) != 0 && 
-      selfDir.compare(entry->d_name) != 0){ //dont want to check .. and .
-      //stat to check if its a directory
-      struct stat st;
-      lstat((current_directory+"/"+entry->d_name).c_str(), &st);
-      cerr << "just stated: " << current_directory+"/"+entry->d_name << std::endl;
-      if(S_ISDIR(st.st_mode)){
-        //clean in the snapshot_directory, keep traversing otherwise
-        if(SNAPSHOT_DIRECTORY_NAME.compare(entry->d_name) == 0){
-          cleanup_backups(current_directory+"/"+entry->d_name);
-        } else {
-          traverse_directory_tree(current_directory+"/"+entry->d_name);
-        }
+
+  directory_map(current_directory, [&current_directory](const string& dirname) {
+    string full_path = current_directory + "/" + dirname;
+    struct stat st;
+    lstat(full_path.c_str(), &st);
+    cerr << "just stated: " << full_path << std::endl;
+
+    if(S_ISDIR(st.st_mode)){
+      //clean in the snapshot_directory, keep traversing otherwise
+      if(dirname == SNAPSHOT_DIRECTORY_NAME){
+        cleanup_backups(full_path);
+      } else {
+        traverse_directory_tree(full_path);
       }
     }
-    entry = readdir(dir);
-  }
-  closedir(dir);
-  return;
+  });
 }
 
 static void collectGarbage(){
