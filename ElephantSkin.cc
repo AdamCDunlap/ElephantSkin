@@ -32,16 +32,13 @@
 #endif
 #include <sys/wait.h>
 #include <string>
-#include <string>
 #include <iostream>
 #include <array>
-<<<<<<< HEAD
 #include <thread>
 #include <vector>
 #include <algorithm>
-=======
 #include <tuple>
->>>>>>> refs/remotes/origin/master
+
 
 using std::string;
 using std::cout;
@@ -54,9 +51,8 @@ static const string term_red = "[0;31m";
 static const string term_yellow = "[0;33m";
 static const string term_reset = "[0;0m";
 
-<<<<<<< HEAD
 //string mirrordir = "/home/adam/docs/hmc/files/ElephantSkin/backenddir";
-string mirrordir;
+//string mirrordir;
 string mountdir;
 int GARBAGE_INTERVAL = 10; //how often to garbage collect in seconds
 string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
@@ -66,8 +62,8 @@ int LANDMARK_AMOUNT = 50;   //how many version of a file to keep before
                             //cleaning some up 
 string parentDir = "..";
 string selfDir = ".";                           
-=======
->>>>>>> refs/remotes/origin/master
+
+
 
 static void copyFile(const string& from, const string& to)
 {
@@ -104,10 +100,10 @@ static int convertDateToInt(const string ISOTIME){
   onlyNumbers.erase(10,1);
   onlyNumbers.erase(7,1);
   onlyNumbers.erase(4,1);
-  return stoi(onlyNumbers.c_str());
+  return stoi(onlyNumbers);
 }
 
-<<<<<<< HEAD
+
 //the function to determine whether to keep a file past its landmark
 static bool keepFileEvaluation( const int time_newest,
                                 const int time_curr,
@@ -203,7 +199,7 @@ static void cleanup_backup_specific(const string current_directory, const string
   //clean one file at a time by drilling into its directory
   cerr<< "entering backups folder " << current_directory<< std::endl;
   DIR *dir_backups = opendir((current_directory+"/"+SNAPSHOT_DIRECTORY_NAME+"/"+file_name).c_str());
-  struct backup *entry = readdir(dir);
+  struct dirent *backup = readdir(dir_backups);
   std::vector<string> backups;
   cerr<< "Most Recent Backup:" << backup->d_name << std::endl;
   while(backup != nullptr){
@@ -240,12 +236,12 @@ static void cleanup_backup_specific(const string current_directory, const string
       prevIteration = currIteration;
     } else {
       //++iterationsSinceKept;
-      string full_dir = ((string)current_directory + "/" + (string)entry->d_name + "/" + currName);
+      string full_dir = ((current_directory+"/"+SNAPSHOT_DIRECTORY_NAME+"/"+file_name) + "/" + currName);
       cerr << "unlinking: " << full_dir << std::endl;
       unlink(full_dir.c_str());
     }
   }
-  closedir(dir);
+  closedir(dir_backups);
   return;
 }
 
@@ -285,7 +281,8 @@ static void collectGarbage(){
     sleep(GARBAGE_INTERVAL);
     traverse_directory_tree(mirrordir);
   }
-=======
+}
+
 // Given path, return the child name (part after last /) and parent name (the
 // rest of it, not including the /. Return empty string for root directory.
 std::tuple<string, string> break_off_last_path_entry(const string& path) {
@@ -336,7 +333,6 @@ static void backupFile(const string& path) {
   newLocationBuilder += "/" + timestring;
   cerr << "Copying to " << newLocationBuilder << endl;
   copyFile(path, newLocationBuilder);
->>>>>>> refs/remotes/origin/master
 }
 
 static int xmp_getattr(const char *cpath, struct stat *stbuf)
@@ -700,7 +696,6 @@ static struct fuse_operations xmp_oper = {
 int main(int argc, char *argv[])
 {
   umask(0);
-<<<<<<< HEAD
   
   char path[PATH_MAX];
   getcwd(path, PATH_MAX);
@@ -714,8 +709,7 @@ int main(int argc, char *argv[])
   mkdir(mirrordir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ); 
   cerr << mirrordir << std::endl;
   std::thread garbage_collection(collectGarbage);
-  
-=======
+/*
 
   if (argc < 2) {
     cerr << "First argument should be the backend directory" << endl;
@@ -727,9 +721,8 @@ int main(int argc, char *argv[])
   free(c_cwd);
   ++argv;
   --argc;
-
+*/
   cout << "Opening " << mirrordir << " as backend directory" << endl;
 
->>>>>>> refs/remotes/origin/master
   return fuse_main(argc, argv, &xmp_oper, NULL);
 }
