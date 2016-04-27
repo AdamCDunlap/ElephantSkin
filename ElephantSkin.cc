@@ -95,6 +95,18 @@ static void copyFile(const string& from, const string& to)
   }
 }
 
+static int convertDateToInt(const string ISOTIME){
+  //"2016-04-24T18:21:45Z" -> "20160424182145"
+  string onlyNumbers = ISOTIME;
+  onlyNumbers.erase(19,1);
+  onlyNumbers.erase(16,1);
+  onlyNumbers.erase(13,1);
+  onlyNumbers.erase(10,1);
+  onlyNumbers.erase(7,1);
+  onlyNumbers.erase(4,1);
+  return stoi(onlyNumbers.c_str());
+}
+
 <<<<<<< HEAD
 //the function to determine whether to keep a file past its landmark
 static bool keepFileEvaluation( const int time_newest,
@@ -158,7 +170,7 @@ static void cleanup_backups(const string current_directory){
         mostRecentName = backups.back();
         backups.pop_back();
         std::string::size_type n = mostRecentName.find( '_' );
-        mostRecentDate = stoi(mostRecentName.substr(0, n));
+        mostRecentDate = convertDateToInt(mostRecentName.substr(0, n));
         //cerr << "date " << mostRecentDate << std::endl;
         mostRecentIteration = stoi(mostRecentName.substr(n+1));
         prevIteration = mostRecentIteration;
@@ -168,7 +180,7 @@ static void cleanup_backups(const string current_directory){
         string currName = backups.back();
         backups.pop_back();
         std::string::size_type n = currName.find( '_' );
-        int currDate = stoi(currName.substr(0, n));
+        int currDate = convertDateToInt(currName.substr(0, n));
         int currIteration = stoi(currName.substr(n+1));
         if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, prevIteration, currIteration)){
           //iterationsSinceKept = 0;
@@ -182,6 +194,56 @@ static void cleanup_backups(const string current_directory){
       }
     }
     entry = readdir(dir);
+  }
+  closedir(dir);
+  return;
+}
+
+static void cleanup_backup_specific(const string current_directory, const string file_name){
+  //clean one file at a time by drilling into its directory
+  cerr<< "entering backups folder " << current_directory<< std::endl;
+  DIR *dir_backups = opendir((current_directory+"/"+SNAPSHOT_DIRECTORY_NAME+"/"+file_name).c_str());
+  struct backup *entry = readdir(dir);
+  std::vector<string> backups;
+  cerr<< "Most Recent Backup:" << backup->d_name << std::endl;
+  while(backup != nullptr){
+    if( parentDir.compare(backup->d_name) != 0 && //dont want to check .. and .
+        selfDir.compare(backup->d_name) != 0){
+      cerr << "Adding to backup list " << backup->d_name << std::endl;
+      backups.push_back(backup->d_name);
+    }
+    backup = readdir(dir_backups);
+  }
+  closedir(dir_backups);
+  //alphabetical should make it oldest->newest
+  std::sort(backups.begin(), backups.end());
+  //get most recent value against which to compare rest
+  string mostRecentName;
+  int mostRecentDate;
+  int mostRecentIteration;
+  int prevIteration;
+  if(!backups.empty()){
+    mostRecentName = backups.back();
+    backups.pop_back();
+    std::string::size_type n = mostRecentName.find( '_' );
+    mostRecentDate = convertDateToInt(mostRecentName.substr(0, n));
+    mostRecentIteration = stoi(mostRecentName.substr(n+1));
+    prevIteration = mostRecentIteration;
+  }
+  while(!backups.empty()){
+    string currName = backups.back();
+    backups.pop_back();
+    std::string::size_type n = currName.find( '_' );
+    int currDate = convertDateToInt(currName.substr(0, n));
+    int currIteration = stoi(currName.substr(n+1));
+    if(keepFileEvaluation(mostRecentDate, currDate, mostRecentIteration, prevIteration, currIteration)){
+      prevIteration = currIteration;
+    } else {
+      //++iterationsSinceKept;
+      string full_dir = ((string)current_directory + "/" + (string)entry->d_name + "/" + currName);
+      cerr << "unlinking: " << full_dir << std::endl;
+      unlink(full_dir.c_str());
+    }
   }
   closedir(dir);
   return;
