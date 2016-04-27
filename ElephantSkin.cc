@@ -55,7 +55,7 @@ static const string term_reset = "[0;0m";
 //string mirrordir;
 string mountdir;
 int GARBAGE_INTERVAL = 10; //how often to garbage collect in seconds
-string SNAPSHOT_DIRECTORY_NAME = ".elephant_snapshot";
+string SNAPSHOT_DIRECTORY_NAME = ".snapshots";
 int LANDMARK_AGE = 604800;  //the amount of time (in seconds) to keep all
                             //backups, default to 7 days
 int LANDMARK_AMOUNT = 50;   //how many version of a file to keep before
@@ -312,7 +312,7 @@ static void backupFile(const string& path) {
   std::tie(containing_dir, filename) = break_off_last_path_entry(path);
 
   // Make .snapshots directory
-  string newLocationBuilder = containing_dir + "/.snapshots";
+  string newLocationBuilder = containing_dir + SNAPSHOT_DIRECTORY_NAME;
   cerr << "Making" << newLocationBuilder << endl;
   int err = mkdir( newLocationBuilder.c_str(), 0700);
   // If we got an error that's not a "file already exists" error
