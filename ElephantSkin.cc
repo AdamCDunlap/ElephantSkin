@@ -95,6 +95,33 @@ static void copyFile(const string& from, const string& to)
   }
 }
 
+static void moveFile(const string& from, const string& to)
+{
+  //// fork splits this process into two exact copies. vfork doesn't make a fully
+  //// copy, but we don't care because the child process isn't going to modify
+  //// anything, it's just going to build arguments and exec cp
+  //const pid_t cpID = vfork();
+  //if (cpID == 0) {
+  //  // This is the child process, exec mv to do the copy
+
+  //  // This array must end with nullptr because that's what execv wants
+  //  const std::array<const char*, 4> execvargs{{
+  //    "/bin/mv", from.c_str(), to.c_str(), nullptr
+  //  }};
+
+  //  // const_cast is scary but we're assured that execv won't actually modify
+  //  // the array http://stackoverflow.com/a/190208
+  //  // http://pubs.opengroup.org/onlinepubs/9699919799/functions/exec.html
+  //  execv("/bin/mv", const_cast<char**>(execvargs.data()));
+  //} else {
+  //  // This is the parent process, so wait for the copy to finish and then reap
+  //  // it.
+  //  wait(nullptr);
+  //}
+
+  rename(from.c_str(), to.c_str());
+}
+
 // Given path, return the child name (part after last /) and parent name (the
 // rest of it, not including the /. Return empty string for root directory.
 std::tuple<string, string> break_off_last_path_entry(const string& path) {
@@ -234,7 +261,8 @@ std::tuple<time_t, size_t> get_time_and_iteration_from_filename
   return std::make_tuple(filetime_as_time_t, currIteration);
 }
 
-static void backupFile(const string& path) {
+static void backupFile(const string& path, bool move = false) {
+  cerr << term_yellow << "Backing up " << path << term_reset << endl;
   string containing_dir, filename;
   std::tie(containing_dir, filename) = break_off_last_path_entry(path);
 
@@ -282,7 +310,11 @@ static void backupFile(const string& path) {
 
   // Copy the file to .snapsots/thefile/thetime
   cerr << "Copying to " << newLocationBuilder.str() << endl;
-  copyFile(path, newLocationBuilder.str());
+  if (move) {
+    moveFile(path, newLocationBuilder.str());
+  } else {
+    copyFile(path, newLocationBuilder.str());
+  }
 }
 
 static void cleanup_backups(const string& current_directory){
@@ -558,11 +590,11 @@ static int xmp_unlink(const char *cpath)
   string path(cpath);
   string mirrorpath = mirrordir + path;
 
-  backupFile(mirrorpath);
+  backupFile(mirrorpath, true);
 
-  res = unlink(mirrorpath.c_str());
-  if (res == -1)
-    return -errno;
+  //res = unlink(mirrorpath.c_str());
+  //if (res == -1)
+  //  return -errno;
 
   return 0;
 }
@@ -656,7 +688,15 @@ static int xmp_truncate(const char *cpath, off_t size)
   string path(cpath);
   string mirrorpath = mirrordir + path;
 
-  backupFile(mirrorpath);
+  // Common special case, move the old file instead of copying and make a new
+  // one
+  if (size == 0){
+    backupFile(mirrorpath, true);
+
+    mknod(mirrorpath.c_str(), 0600, 0);
+  } else {
+    backupFile(mirrorpath);
+  }
 
   res = truncate(mirrorpath.c_str(), size);
   if (res == -1)
@@ -729,11 +769,19 @@ static int xmp_write(const char *cpath, const char *buf, size_t size,
   string path(cpath);
   string mirrorpath = mirrordir + path;
 
-  backupFile(mirrorpath);
-
   fd = open(mirrorpath.c_str(), O_WRONLY);
   if (fd == -1)
     return -errno;
+
+  // Backup if we're doing an overwrite
+  struct stat stbuf;
+  res = lstat(mirrorpath.c_str(), &stbuf);
+  if (res == -1)
+    return -errno;
+
+  if (offset < stbuf.st_size) {
+    backupFile(mirrorpath);
+  }
 
   res = pwrite(fd, buf, size, offset);
   if (res == -1)
